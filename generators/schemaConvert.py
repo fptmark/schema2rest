@@ -1,217 +1,286 @@
 import re
+import shlex
+import sys
+import helpers
+import ast
 import yaml
-from collections import defaultdict
 
-def parse_validation_string(validation_str):
-    """
-    Parses a validation string like "{ type ObjectId, required true, autoGenerate true }"
-    or "{ type: ObjectId, required: true }" into a Python dictionary.
-    """
-    validation = {}
-    # Remove the surrounding braces and whitespace
-    validation_str = validation_str.strip().strip('{}').strip()
-    # Split by commas that are not inside brackets (for now, we assume no nested commas)
-    pairs = re.split(r'\s*,\s*', validation_str)
+
+def clean(string):
+   s = string.strip()
+   position = s.find(':')
+   if position > 0:
+      return s[:position]
+   elif s.endswith(','):
+      return s[:-1]
+   return s
+
+def parse(lines):
+   all_entities = {}
+   current_entity = None
+   fields = {}
+   extras = []
+   relationships = []
     
-    for pair in pairs:
-        if not pair:
-            continue
-        # Try splitting by colon; if not found, split by whitespace
-        if ':' in pair:
-            key, value = pair.split(':', 1)
-        else:
-            parts = pair.split(None, 1)
-            if len(parts) != 2:
-                continue
-            key, value = parts
-        key = key.strip()
-        value = value.strip()
-        # Handle booleans
-        if value.lower() == 'true':
-            value = True
-        elif value.lower() == 'false':
-            value = False
-
-        value_str = value if isinstance(value, str) else str(value)
-
-        # Handle list values (e.g., enums or arrays) if wrapped in [ ]
-        if value_str.startswith('[') and value_str.endswith(']'):
-            items = re.findall(r"'([^']*)'|\"([^\"]*)\"|([^,\s]+)", value_str[1:-1])
-            items = [item[0] or item[1] or item[2] for item in items]
-            value = items
-        else:
-            # Remove any surrounding quotes
-            value = value_str.strip('\'"')
-        validation[key] = value
-    return validation
-
-def parse_mmd(mmd_content):
-    entities = {}
-    validations = {}
-    relationships = []
-    lines = mmd_content.splitlines()
-    current_entity = None
-    last_entity = None
-    validation_entity = None
-
-    # Regular expressions
-    entity_pattern = re.compile(r'^(\w+)\s*\{')
-    field_pattern = re.compile(r'^\s*(\w+)\s+([\w\[\]]+)')
-    validation_start_pattern = re.compile(r'^%%\s*@validation\s+(\w+)')
-    # Allow optional colon after field name: (\w+):?\s*\{(.+)\}
-    validation_field_pattern = re.compile(r'^%%\s+(\w+):?\s*\{(.+)\}')
-    inherits_pattern = re.compile(r'^%%\s*@inherits\s+(\w+)')
-    relationship_pattern = re.compile(r'^(\w+)\s+\|\|--o\{\s*(\w+):.*$')
+   # Pattern for the entity header (e.g. "BaseEntity {")
+   entity_header_pattern = re.compile(r'^(\w+)\s*\{')
+   # Pattern for a field definition line: must match something like "ObjectId _id"
+   field_pattern = re.compile(r'^(\w+)\s+(\w+)$')
     
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith('erDiagram'):
-            continue
+   RELATION_SPEC = "||--o{"
 
-        # Check for entity definition
-        entity_match = entity_pattern.match(line)
-        if entity_match:
-            current_entity = entity_match.group(1)
-            last_entity = current_entity
-            entities[current_entity] = {'fields': {}, 'relations': []}
-            continue
+   in_entity = False
+   in_extras = False
 
-        # Check for end of entity block
-        if line == '}':
-            current_entity = None
-            continue
+   for line in lines:
+      # Remove newline characters.
+      line = line.rstrip('\n')
+      stripped = line.strip()
+      if not stripped:
+         continue
 
-        # Check for validation start
-        validation_start_match = validation_start_pattern.match(line)
-        if validation_start_match:
-            validation_entity = validation_start_match.group(1)
-            validations[validation_entity] = {}
-            continue
+      # If we're not inside an entity yet, look for an entity header.
+      if not in_entity:
+         header_match = entity_header_pattern.match(stripped)
+         if header_match:
+            current_entity = header_match.group(1)
+            print(f"Processing entity: {current_entity}")
+            in_entity = True
+            # Reset fields and extras for this entity.
+            fields = {}
+            extras = []
+         # Process relationships 
+         elif stripped.find(RELATION_SPEC) > 0:
+            words = stripped.split(RELATION_SPEC)
+            child = words[0].strip()
+            parent = clean(words[1])
+            relationships.append((child, parent))
+            # all_entities[parent].setdefault('children', []).append(child)
+         continue
 
-        # Check for @inherits line
-        inherits_match = inherits_pattern.match(line)
-        if inherits_match:
-            parent = inherits_match.group(1)
-            # Associate with the last defined entity
-            if last_entity:
-                entities[last_entity]['inherits'] = parent
-            continue
+      # If the line is the closing brace, then end the entity.
+      if stripped == '}':
+         in_entity = False
+         # Store the result in the object.
+         if current_entity:
+            all_entities[current_entity] = {
+               "fields": fields,
+               "extras": extras
+            }
+         current_entity = None
+         in_extras = False
+         continue
 
-        # Check for validation fields
-        validation_field_match = validation_field_pattern.match(line)
-        if validation_field_match and validation_entity:
-            field_name = validation_field_match.group(1)
-            field_validations_str = validation_field_match.group(2)
+      # If we're inside the entity, check if we are still reading field definitions.
+      if not in_extras:
+         # Try to match the field pattern.
+         field_match = field_pattern.match(stripped)
+         if field_match:
+            # It's a field definition.
+            field_type = field_match.group(1)
+            field_name = field_match.group(2)
+            fields[field_name] = field_type
+            continue
+         else:
+            # As soon as we encounter a line that does not match a field definition,
+            # we consider that the fields are done and the rest are extras.
+            in_extras = True
+        
+      # If in_extras, add the line (even if it starts with %% or anything else).
+      if in_extras:
+         extras.append(stripped)
+   
+   return all_entities, relationships
+
+def get_validations(obj_dict):
+   validation_start_pattern = re.compile(r'^%%\s*@validation_start?(?:\s+(\w+))?')
+   validation_end_pattern = re.compile(  r'^%%\s*@validation_end?(?:\s+(\w+))?')
+
+   for entity, object in obj_dict.items():
+      entity_validations = {}
+      in_validation = False
+      for raw_line in object["extras"]:
+         line = raw_line.strip()
+         if validation_start_pattern.match(line):
+               in_validation = True
+         elif validation_end_pattern.match(line):
+               in_validation = False
+
+         elif in_validation:
+            field_validations = {}
+            lexer = shlex.shlex(line, posix=True)
+            lexer.whitespace = ' '
+            lexer.whitespace_split = True
+            tokens = list(lexer)
+            if tokens[0] == '%%' and tokens[2] == '{' and tokens[-1] == '}':
+               field = clean(tokens[1])
+               
+               # Get validations from the token list
+               i = 3
+               while(i > 0 and tokens[i] != '}'):
+                  key, value, i = get_validation(i, tokens)
+                  if i > 0:
+                     field_validations[key] = value
+
+            if len(field_validations) > 0:
+               entity_validations[field] = field_validations  
+
+      if len(entity_validations) > 0:
+         obj_dict[entity]["validations"] = entity_validations
+
+   return {}
+
+def get_validation(i, tokens):
+   attribute = clean(tokens[i])
+   if attribute != 'enum':
+      value = clean(tokens[i+1])
+      return attribute, value, i + 2
+   else:
+      start = i + 1
+      i = start
+      words = []
+      while i < len(tokens) and tokens[i] != '}':
+         word = clean(tokens[i])
+         words.append(word[1:] if word.startswith("[") else word[:-1] if word.endswith("]") else word)
+         if tokens[i].endswith(']'):
+            value = repr(words)
+            return attribute, value, i + 1
+         else:
+            i += 1
+      return '', '', -1
+
+def remove_extras(obj_dict):
+   for entity, object in obj_dict.items():
+      if "extras" in object:
+         del obj_dict[entity]["extras"]
+
+def get_inheritances(obj_dict):
+   for entity, object in obj_dict.items():
+      for raw_line in object["extras"]:
+         line = raw_line.strip()
+         if line.startswith("%% @inherits"):
+            tokens = line.split()
+            if len(tokens) > 2:
+               obj_dict[entity]["inherits"] = tokens[2:]
+
+import ast
+import yaml
+
+def convert_validation_value(key, value):
+    """
+    Converts a validation value from a string to an appropriate type.
+    - For boolean keys ("required", "autoGenerate", "autoUpdate"), convert "true"/"false" (case-insensitive) to booleans.
+    - For numeric keys ("minLength", "maxLength"), convert to integer if possible.
+    - For "enum", if the value is a string that starts with '[' and ends with ']', use ast.literal_eval to convert it into a list.
+    - Otherwise, return the value unchanged.
+    """
+    bool_keys = {"required", "autoGenerate", "autoUpdate"}
+    numeric_keys = {"minLength", "maxLength"}
+    
+    if key in bool_keys:
+        if isinstance(value, str):
+            return True if value.lower() == "true" else False
+        return value
+    elif key in numeric_keys:
+        try:
+            return int(value)
+        except Exception:
+            return value
+    elif key == "enum":
+        if isinstance(value, str) and value.startswith('[') and value.endswith(']'):
             try:
-                field_validations = parse_validation_string(field_validations_str)
-                validations[validation_entity][field_name] = field_validations
-            except Exception as e:
-                print(f"Error parsing validation for {validation_entity}.{field_name}: {e}")
-            continue
+                evaluated = ast.literal_eval(value)
+                if isinstance(evaluated, list):
+                    return [str(item) for item in evaluated]
+                return evaluated
+            except Exception:
+                return value
+        return value
+    else:
+        return value
 
-        # Check for relationships
-        relationship_match = relationship_pattern.match(line)
-        if relationship_match:
-            source = relationship_match.group(1)
-            target = relationship_match.group(2)
-            relationships.append({'source': source, 'target': target})
-            continue
-
-        # If inside an entity, parse fields
-        if current_entity:
-            field_match = field_pattern.match(line)
-            if field_match:
-                # In our ER syntax, the first token is the type and the second is the field name.
-                field_type = field_match.group(1)
-                field_name = field_match.group(2)
-                entities[current_entity]['fields'][field_name] = {'type': field_type}
-    return entities, validations, relationships
-
-def process_entities(entities, validations):
-    processed = {}
-    for entity, data in entities.items():
-        entity_key = entity
-        processed[entity_key] = {'fields': {}, 'relations': []}
-        # If this entity inherits from another, record it.
-        if 'inherits' in data:
-            processed[entity_key]['inherits'] = data['inherits']
-        fields = data['fields']
-        entity_validations = validations.get(entity, {})
-        for field, details in fields.items():
-            field_info = {}
-            field_type = details['type']
-            # Handle Array types (if using Array[...] syntax)
-            array_match = re.match(r'Array\[(\w+)\]', field_type)
-            if array_match:
-                base_type = array_match.group(1)
-                field_info['type'] = f"Array[{base_type}]"
-            else:
-                field_info['type'] = field_type
-            # Add validation data if present
-            validation = entity_validations.get(field, {})
-            required = validation.get('required', False)
-            if isinstance(required, bool):
-                required = 'True' if required else 'False'
-            else:
-                required = 'True' if str(required).lower() == 'true' else 'False'
-            field_info['required'] = required
-            for key, value in validation.items():
-                if key != 'required':
-                    field_info[key] = value
-            processed[entity_key]['fields'][field] = field_info
-        processed[entity_key]['relations'] = []  # To be filled later
-        print(f"Processed Entity: {entity_key}")  # Debug statement
-    return processed
-
-def map_relationships(processed_entities, relationships):
-    for rel in relationships:
-        source = rel['source']
-        target = rel['target']
-        if source in processed_entities:
-            processed_entities[source]['relations'].append(target)
-            print(f"Mapped Relationship: {source} -> {target}")  # Debug statement
-        else:
-            print(f"Warning: Source entity '{source}' not found in entities.")
-    return processed_entities
-
-def build_relationships_section(relationships):
-    relationships_section = []
-    for rel in relationships:
-        relationships_section.append({
-            'source': rel['source'],
-            'target': rel['target']
-        })
-    return relationships_section
-
-def convert_mmd_to_yaml(mmd_content):
-    entities, validations, relationships = parse_mmd(mmd_content)
-    processed_entities = process_entities(entities, validations)
-    processed_entities = map_relationships(processed_entities, relationships)
-    relationships_section = build_relationships_section(relationships)
-
-    # Combine into final YAML structure
-    yaml_output = {}
-    yaml_output['_relationships'] = relationships_section
-    for entity, data in processed_entities.items():
-        yaml_output[entity] = data
-
-    return yaml.dump(yaml_output, sort_keys=False)
-
-def main():
-    try:
-        # Read MMD content from 'schema.mmd'
-        with open('schema.mmd', 'r') as file:
-            mmd_content = file.read()
-    except FileNotFoundError:
-        print("Error: 'schema.mmd' file not found. Please ensure the file exists in the current directory.")
-        return
-
-    yaml_result = convert_mmd_to_yaml(mmd_content)
-
-    # Write the YAML to 'schema.yaml'
-    with open('schema.yaml', 'w') as yaml_file:
-        yaml_file.write(yaml_result)
-    print("YAML conversion completed. Check 'schema.yaml'.")
+def generate_yaml(entities, relationships, filename):
+    """
+    Generates YAML output from the given entities dictionary and relationships list,
+    and writes the YAML to the specified filename.
+    
+    The input 'entities' dictionary has the following structure for each entity:
+      {
+         "fields": { <fieldName>: <Type>, ... },
+         "validations": { <fieldName>: { <validationKey>: <value>, ... }, ... },
+         "inherits": [ ... ]   (optional)
+      }
+      
+    The function merges the validation rules into the field definitions (under "fields") as follows:
+      - Each field definition becomes a dictionary that always includes the field's "type".
+      - If there are validation rules for that field, they are merged into this dictionary.
+      - The "required", "autoGenerate", and "autoUpdate" keys are converted from string "true"/"false" to booleans.
+      - Numeric keys (e.g., "minLength", "maxLength") are converted to integers if possible.
+      - The "enum" key is converted to a list if its value is a string that looks like a list.
+    
+    Then, the function populates each entity's "relations" array based on the relationships list
+    (which is a list of tuples (child, parent)) and builds a top-level "_relationships" list.
+    
+    Finally, it outputs a YAML object with a top-level key "_relationships" and then one key per entity,
+    where each entity includes "fields", "relations", and "inherits" (if present).
+    """
+    # Merge validations into each entity's fields.
+    for entity_name, entity_data in entities.items():
+        fields = entity_data.get("fields", {})
+        validations = entity_data.get("validations", {})
+        for field_name, field_type in fields.items():
+            merged = {"type": field_type}
+            if field_name in validations:
+                for key, val in validations[field_name].items():
+                    merged[key] = convert_validation_value(key, val)
+            fields[field_name] = merged
+        # Remove the separate validations section.
+        if "validations" in entity_data:
+            del entity_data["validations"]
+        # Ensure the entity has a "relations" key.
+        if "relations" not in entity_data:
+            entity_data["relations"] = []
+    
+    # Process relationships:
+    # Build top-level _relationships list and update each entity's "relations" array.
+    top_relationships = []
+    # Assume relationships is a list of tuples: (child, parent)
+    for child, parent in relationships:
+        top_relationships.append({"source": child, "target": parent})
+        if child in entities:
+            if "relations" not in entities[child]:
+                entities[child]["relations"] = []
+            if parent not in entities[child]["relations"]:
+                entities[child]["relations"].append(parent)
+    
+    # Construct the final output object.
+    output_obj = {"_relationships": top_relationships}
+    for entity_name, entity_data in entities.items():
+        # Ensure "inherits" is a list if present.
+        if "inherits" in entity_data and not isinstance(entity_data["inherits"], list):
+            entity_data["inherits"] = [entity_data["inherits"]]
+        output_obj[entity_name] = entity_data
+    
+    # Dump the output object to YAML.
+    with open(filename, "w") as f:
+        yaml.dump(output_obj, f, sort_keys=False)
 
 if __name__ == "__main__":
-    main()
+   if len(sys.argv) == 3:
+      infile = sys.argv[1]
+      outfile = sys.argv[2]
+   else:
+      print(f"Usage: python {sys.argv[0]} <schema.mmd> <output.yaml>")
+      sys.exit(1)
+
+   lines = helpers.read_file_to_array(infile)
+
+   obj_dict, relationships = parse(lines)
+
+   get_validations(obj_dict)
+
+   get_inheritances(obj_dict)
+
+   remove_extras(obj_dict)
+   
+   generate_yaml(obj_dict, relationships, outfile)
