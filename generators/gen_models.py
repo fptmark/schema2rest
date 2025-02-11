@@ -45,7 +45,7 @@ def model_field_filter(field_data: dict) -> str:
     if 'pattern' in field_data:
         field_params.append(f"regex=r'{field_data['pattern']}'")
     if 'enum' in field_data:
-        field_params.append(f"description='Allowed values: {field_data['enum']}'")
+        field_params.append(f"description=\"Allowed values: {field_data['enum']}\"")
     if 'min' in field_data:
         field_params.append(f"ge={field_data['min']}")
     if 'max' in field_data:
@@ -107,7 +107,8 @@ def generate_models(schema_file: str, path_root: str):
         if entity_name in special_keys:
             continue
 
-        inherits_base = (entity_def.get("inherits") == "BaseEntity")
+        inherits = entity_def.get("inherits") 
+        inherits_base = True if inherits and ("BaseEntity" in inherits) else False
         fields = entity_def.get("fields", {})
 
         rendered_model = model_template.render(

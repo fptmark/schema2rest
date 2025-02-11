@@ -1,3 +1,4 @@
+from pathlib import Path
 import re
 import shlex
 import sys
@@ -168,10 +169,12 @@ import yaml
 
 def convert_validation_value(key, value):
     """
-    Converts a validation value from a string to an appropriate type.
-    - For boolean keys ("required", "autoGenerate", "autoUpdate"), convert "true"/"false" (case-insensitive) to booleans.
-    - For numeric keys ("minLength", "maxLength"), convert to integer if possible.
-    - For "enum", if the value is a string that starts with '[' and ends with ']', use ast.literal_eval to convert it into a list.
+    Convert a validation value from a string to an appropriate type.
+    
+    - For boolean keys ("required", "autoGenerate", "autoUpdate"), convert "true"/"false" to booleans.
+    - For numeric keys ("minLength", "maxLength"), attempt to convert to an integer.
+    - For "enum", if the value is a string that looks like a list (i.e. starts with '[' and ends with ']'),
+      use ast.literal_eval to convert it to a list of strings.
     - Otherwise, return the value unchanged.
     """
     bool_keys = {"required", "autoGenerate", "autoUpdate"}
@@ -199,32 +202,30 @@ def convert_validation_value(key, value):
     else:
         return value
 
-def generate_yaml(entities, relationships, filename):
+def generate_schema_yaml(entities, relationships, filename):
     """
     Generates YAML output from the given entities dictionary and relationships list,
     and writes the YAML to the specified filename.
     
-    The input 'entities' dictionary has the following structure for each entity:
-      {
-         "fields": { <fieldName>: <Type>, ... },
-         "validations": { <fieldName>: { <validationKey>: <value>, ... }, ... },
-         "inherits": [ ... ]   (optional)
-      }
-      
-    The function merges the validation rules into the field definitions (under "fields") as follows:
-      - Each field definition becomes a dictionary that always includes the field's "type".
-      - If there are validation rules for that field, they are merged into this dictionary.
-      - The "required", "autoGenerate", and "autoUpdate" keys are converted from string "true"/"false" to booleans.
-      - Numeric keys (e.g., "minLength", "maxLength") are converted to integers if possible.
-      - The "enum" key is converted to a list if its value is a string that looks like a list.
+    Arguments:
+      entities: a dictionary produced by your parser. Each key is an entity name, and its value is a dictionary
+                with at least:
+                   - "fields": a dictionary mapping field names to field types.
+                   - "validations": a dictionary mapping field names to validation rules.
+                   - Optionally, "inherits": a list of parent entity names.
+      relationships: a list of tuples (child, parent) representing relationships.
+                     (For example: [('Account', 'User'), ('User', 'Profile'), ('Profile', 'TagAffinity'),
+                                    ('UserEvent', 'User'), ('UserEvent', 'Event'), ('Url', 'Crawl')])
+      filename: the output filename for the YAML.
     
-    Then, the function populates each entity's "relations" array based on the relationships list
-    (which is a list of tuples (child, parent)) and builds a top-level "_relationships" list.
-    
-    Finally, it outputs a YAML object with a top-level key "_relationships" and then one key per entity,
-    where each entity includes "fields", "relations", and "inherits" (if present).
+    This function:
+      1. Merges validations into each field's definition (under "fields")—converting booleans and numeric values as needed.
+      2. Removes the separate "validations" section.
+      3. Populates each entity’s "relations" array using the provided relationships.
+      4. Builds a top-level _relationships list.
+      5. Writes the final output object as YAML.
     """
-    # Merge validations into each entity's fields.
+    # Merge validations into fields.
     for entity_name, entity_data in entities.items():
         fields = entity_data.get("fields", {})
         validations = entity_data.get("validations", {})
@@ -234,17 +235,13 @@ def generate_yaml(entities, relationships, filename):
                 for key, val in validations[field_name].items():
                     merged[key] = convert_validation_value(key, val)
             fields[field_name] = merged
-        # Remove the separate validations section.
         if "validations" in entity_data:
             del entity_data["validations"]
-        # Ensure the entity has a "relations" key.
         if "relations" not in entity_data:
             entity_data["relations"] = []
     
-    # Process relationships:
-    # Build top-level _relationships list and update each entity's "relations" array.
+    # Process relationships: build top-level _relationships and update each entity's "relations".
     top_relationships = []
-    # Assume relationships is a list of tuples: (child, parent)
     for child, parent in relationships:
         top_relationships.append({"source": child, "target": parent})
         if child in entities:
@@ -253,24 +250,24 @@ def generate_yaml(entities, relationships, filename):
             if parent not in entities[child]["relations"]:
                 entities[child]["relations"].append(parent)
     
-    # Construct the final output object.
+    # Construct final output object.
     output_obj = {"_relationships": top_relationships}
     for entity_name, entity_data in entities.items():
-        # Ensure "inherits" is a list if present.
         if "inherits" in entity_data and not isinstance(entity_data["inherits"], list):
             entity_data["inherits"] = [entity_data["inherits"]]
         output_obj[entity_name] = entity_data
     
-    # Dump the output object to YAML.
     with open(filename, "w") as f:
         yaml.dump(output_obj, f, sort_keys=False)
+
+    print(f"Schema written to {filename}")
 
 if __name__ == "__main__":
    if len(sys.argv) == 3:
       infile = sys.argv[1]
-      outfile = sys.argv[2]
+      outfile = Path(sys.argv[2], "schema.yaml")
    else:
-      print(f"Usage: python {sys.argv[0]} <schema.mmd> <output.yaml>")
+      print(f"Usage: python {sys.argv[0]} <schema.mmd> <output_dir>")
       sys.exit(1)
 
    lines = helpers.read_file_to_array(infile)
@@ -283,4 +280,4 @@ if __name__ == "__main__":
 
    remove_extras(obj_dict)
    
-   generate_yaml(obj_dict, relationships, outfile)
+   generate_schema_yaml(obj_dict, relationships, outfile)
