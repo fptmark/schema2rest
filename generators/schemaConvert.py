@@ -6,6 +6,9 @@ import helpers
 import ast
 import yaml
 
+UNIQUE = "%% @unique"
+VALIDATE = "%% @validate"
+INHERIT = "%% @inherit"
 
 def clean(string):
    s = string.strip()
@@ -93,43 +96,49 @@ def parse(lines):
    
    return all_entities, relationships
 
-def get_validations(obj_dict):
-   validation_start_pattern = re.compile(r'^%%\s*@validation_start?(?:\s+(\w+))?')
-   validation_end_pattern = re.compile(  r'^%%\s*@validation_end?(?:\s+(\w+))?')
+def process_extras(obj_dict):
 
    for entity, object in obj_dict.items():
-      entity_validations = {}
-      in_validation = False
-      for raw_line in object["extras"]:
-         line = raw_line.strip()
-         if validation_start_pattern.match(line):
-               in_validation = True
-         elif validation_end_pattern.match(line):
-               in_validation = False
+      # process the extras to extract the validation, inheritance and unique data
+      inherits = []
+      validations = {}
+      uniques = []
+      for line in object["extras"]:
+        if line.startswith(INHERIT):
+           inherits.append( process_inheritance(line) ) 
+        elif line.startswith(VALIDATE):
+          field, validation = process_validation(line)
+          validations[field] = validation
+        elif line.startswith(UNIQUE):
+           uniques.append( {'fields': process_unique(line, uniques) } )
 
-         elif in_validation:
-            field_validations = {}
-            lexer = shlex.shlex(line, posix=True)
-            lexer.whitespace = ' '
-            lexer.whitespace_split = True
-            tokens = list(lexer)
-            if tokens[0] == '%%' and tokens[2] == '{' and tokens[-1] == '}':
-               field = clean(tokens[1])
+      del obj_dict[entity]["extras"]
+      if len(validations) > 0:
+         obj_dict[entity]["validations"] = validations
+      if len(inherits) > 0:
+          obj_dict[entity]["inherits"] = inherits
+      if len(uniques) > 0:
+          obj_dict[entity]["uniques"] = uniques
+ 
+      
+
+def process_validation(line):
+   field_validations = {}
+   lexer = shlex.shlex(line, posix=True)
+   lexer.whitespace = ' '
+   lexer.whitespace_split = True
+   tokens = list(lexer)
+   if tokens[3] == '{' and tokens[-1] == '}':
+      field = clean(tokens[2])
                
-               # Get validations from the token list
-               i = 3
-               while(i > 0 and tokens[i] != '}'):
-                  key, value, i = get_validation(i, tokens)
-                  if i > 0:
-                     field_validations[key] = value
+   # Get validations from the token list
+      i = 4
+      while(i > 0 and tokens[i] != '}'):
+         key, value, i = get_validation(i, tokens)
+         if i > 0:
+            field_validations[key] = value
+   return field, field_validations
 
-            if len(field_validations) > 0:
-               entity_validations[field] = field_validations  
-
-      if len(entity_validations) > 0:
-         obj_dict[entity]["validations"] = entity_validations
-
-   return {}
 
 def get_validation(i, tokens):
    attribute = clean(tokens[i])
@@ -150,19 +159,19 @@ def get_validation(i, tokens):
             i += 1
       return '', '', -1
 
-def remove_extras(obj_dict):
-   for entity, object in obj_dict.items():
-      if "extras" in object:
-         del obj_dict[entity]["extras"]
+# Handle '%% @inherit BaseEntity'
+def process_inheritance(line):
+   line = line[len(INHERIT):]
+   return line.strip()
 
-def get_inheritances(obj_dict):
-   for entity, object in obj_dict.items():
-      for raw_line in object["extras"]:
-         line = raw_line.strip()
-         if line.startswith("%% @inherits"):
-            tokens = line.split()
-            if len(tokens) > 2:
-               obj_dict[entity]["inherits"] = tokens[2:]
+# Handle '%% @unique email', or '%% @unique email, phone'
+def process_unique(line, uniques):
+   line = line[len(UNIQUE):]
+   return split_strip(line, '+')
+
+def split_strip(line, sep=','):
+   return [word.strip() for word in line.split(sep) if word.strip()]
+
 
 import ast
 import yaml
@@ -252,9 +261,12 @@ def generate_schema_yaml(entities, relationships, filename):
     
     # Construct final output object.
     output_obj = {"_relationships": top_relationships}
+
     for entity_name, entity_data in entities.items():
+        # output Inheritance
         if "inherits" in entity_data and not isinstance(entity_data["inherits"], list):
             entity_data["inherits"] = [entity_data["inherits"]]
+    
         output_obj[entity_name] = entity_data
     
     with open(filename, "w") as f:
@@ -274,10 +286,6 @@ if __name__ == "__main__":
 
    obj_dict, relationships = parse(lines)
 
-   get_validations(obj_dict)
+   process_extras(obj_dict)
 
-   get_inheritances(obj_dict)
-
-   remove_extras(obj_dict)
-   
    generate_schema_yaml(obj_dict, relationships, outfile)

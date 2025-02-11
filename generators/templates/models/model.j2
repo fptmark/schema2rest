@@ -8,6 +8,14 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 
+{% if uniques %}
+class UniqueValidationError(Exception):
+    def __init__(self, fields, query):
+        self.fields = fields
+        self.query = query
+        super().__init__(f"Unique constraint violated for fields: {', '.join(fields)}")
+{% endif %}
+
 {% if inheritsBaseEntity %}
 class {{ entity|capitalize }}(BaseEntity):
 {% else %}
@@ -20,6 +28,28 @@ class {{ entity|capitalize }}(Document):
     class Settings:
         name = "{{ entity|lower() }}"
 
+{% if uniques %}
+    async def validate_uniques(self):
+    {% for unique in uniques %}
+        # Unique constraint on fields: {{ unique.fields|join(', ') }}
+        query = {
+        {% for field in unique.fields %}
+            "{{ field }}": self.{{ field }},
+        {% endfor %}
+        }
+        existing = await self.__class__.find_one(query)
+        if existing:
+            raise UniqueValidationError({{ unique.fields|tojson }}, query)
+    {% endfor %}
+
+    async def save(self, *args, **kwargs):
+        await self.validate_uniques()
+        return await super().save(*args, **kwargs)
+{% else %}
+    async def save(self, *args, **kwargs):
+        return await super().save(*args, **kwargs)
+{% endif %}
+
 class {{ entity|capitalize }}Create(BaseModel):
 {% for field_name, field_info in fields.items() %}
     {{ field_name }}: {{ field_info|model_field }}
@@ -29,7 +59,6 @@ class {{ entity|capitalize }}Create(BaseModel):
 
 class {{ entity|capitalize }}Read(BaseModel):
 {% if inheritsBaseEntity %}
-    # Include base fields at top level in the GET response
     id: Optional[PydanticObjectId] = Field(None, alias="_id")
     createdAt: Optional[datetime] = None
     updatedAt: Optional[datetime] = None

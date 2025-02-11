@@ -9,7 +9,7 @@ import helpers
 ############################
 def model_field_filter(field_data: dict) -> str:
     """
-    Convert a dict of validations (e.g., {'type': 'String', 'required': 'True', ...})
+    Convert a dict of validations (e.g., {'type': 'String', 'required': True, ...})
     into a Python type annotation for Pydantic:
       "Optional[str] = Field(None, min_length=3, regex='^https?://...')"
     """
@@ -58,12 +58,11 @@ def model_field_filter(field_data: dict) -> str:
     return f"{base_type} = {default_str}"
 
 ############################
-# GEN MODELS
+# JINJA ENVIRONMENT SETUP
 ############################
 def get_jinja_env() -> Environment:
     script_dir = os.path.dirname(os.path.abspath(__file__))
     template_dir = os.path.join(script_dir, "templates", "models")
-
     env = Environment(
         loader=FileSystemLoader(template_dir),
         autoescape=False,
@@ -72,13 +71,13 @@ def get_jinja_env() -> Environment:
     )
     return env
 
+############################
+# MODEL GENERATION
+############################
 def generate_models(schema_file: str, path_root: str):
     print("Generating models...")
-
     models_dir = os.path.join(path_root, "app", "models")
     schema = helpers.get_schema(schema_file)
-
-    # template_dir = os.path.join(path_root, "generators", "templates", "models")
     env = get_jinja_env()
     env.filters['model_field'] = model_field_filter
 
@@ -88,15 +87,14 @@ def generate_models(schema_file: str, path_root: str):
         base_entity_template = None
 
     model_template = env.get_template("model.j2")
-
     os.makedirs(models_dir, exist_ok=True)
 
     if "BaseEntity" in schema and base_entity_template:
+        print("Generating BaseEntity.py...")
         base_entity_def = schema["BaseEntity"]
         base_entity_fields = base_entity_def.get("fields", {})
-
-        print("Generating BaseEntity.py...")
-        rendered_base = base_entity_template.render(entity="BaseEntity", fields=base_entity_fields)
+        uniques = base_entity_def.get("uniques", [])
+        rendered_base = base_entity_template.render(entity="BaseEntity", fields=base_entity_fields, uniques=uniques)
         base_entity_path = os.path.join(models_dir, "BaseEntity.py")
         with open(base_entity_path, "w") as f:
             f.write(rendered_base)
@@ -107,21 +105,20 @@ def generate_models(schema_file: str, path_root: str):
         if entity_name in special_keys:
             continue
 
-        inherits = entity_def.get("inherits") 
+        inherits = entity_def.get("inherits")
         inherits_base = True if inherits and ("BaseEntity" in inherits) else False
         fields = entity_def.get("fields", {})
-
+        uniques = entity_def.get("uniques", [])
         rendered_model = model_template.render(
             entity=entity_name,
             fields=fields,
-            inheritsBaseEntity=inherits_base
+            inheritsBaseEntity=inherits_base,
+            uniques=uniques
         )
-
         out_filename = f"{entity_name.lower()}_model.py"
         out_path = os.path.join(models_dir, out_filename)
         with open(out_path, "w") as f:
             f.write(rendered_model)
-
         print(f"Generated {out_filename}")
 
     print("Model generation complete!")
@@ -130,7 +127,6 @@ if __name__ == "__main__":
     if len(sys.argv) != 3:
         print("Usage: python gen_models.py <schema.yaml> <path_root>")
         sys.exit(1)
-
     schema_file = sys.argv[1]
     path_root = sys.argv[2]
     generate_models(schema_file, path_root)
