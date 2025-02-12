@@ -4,9 +4,11 @@ from beanie import PydanticObjectId
 {% else %}
 from beanie import Document
 {% endif %}
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from typing import Optional
 from datetime import datetime
+import re
+import json
 
 {% if uniques %}
 class UniqueValidationError(Exception):
@@ -27,6 +29,38 @@ class {{ entity|capitalize }}(Document):
 
     class Settings:
         name = "{{ entity|lower() }}"
+
+    {# Custom validators for fields with custom messages #}
+    {% for field_name, field_info in fields.items() %}
+        {# Initialize a messages dictionary from keys ending with ".message" #}
+        {% set ns = namespace(messages = {}) %}
+        {% for key, value in field_info.items() %}
+            {% if key.endswith('.message') %}
+                {% set base_key = key[:-8] %}
+                {% set ns.messages = ns.messages | combine({base_key: value}) %}
+            {% endif %}
+        {% endfor %}
+        {% if ns.messages %}
+    @validator('{{ field_name }}')
+    def validate_{{ field_name }}(cls, v):
+        {# If a custom minLength message is provided, validate the length #}
+        {% if ns.messages.get('minLength') is not none and field_info.get('minLength') is not none %}
+        if len(v) < {{ field_info.get('minLength') }}:
+            raise ValueError("{{ ns.messages.get('minLength') }}")
+        {% endif %}
+        {# If a custom maxLength message is provided #}
+        {% if ns.messages.get('maxLength') is not none and field_info.get('maxLength') is not none %}
+        if len(v) > {{ field_info.get('maxLength') }}:
+            raise ValueError("{{ ns.messages.get('maxLength') }}")
+        {% endif %}
+        {# If a custom pattern message is provided #}
+        {% if ns.messages.get('pattern') is not none and field_info.get('pattern') is not none %}
+        if not re.match(r'{{ field_info.get("pattern") }}', v):
+            raise ValueError("{{ ns.messages.get('pattern') }}")
+        {% endif %}
+        return v
+    {% endif %}
+    {% endfor %}
 
 {% if uniques %}
     async def validate_uniques(self):

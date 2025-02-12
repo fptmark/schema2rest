@@ -10,8 +10,10 @@ import helpers
 def model_field_filter(field_data: dict) -> str:
     """
     Convert a dict of validations (e.g., {'type': 'String', 'required': True, ...})
-    into a Python type annotation for Pydantic:
-      "Optional[str] = Field(None, min_length=3, regex='^https?://...')"
+    into a Python type annotation for Pydantic.
+
+    If a custom error message is provided (e.g. with keys like "minLength.message" or "pattern.message"),
+    the corresponding constraint will be omitted from the Field() call so that a custom validator can be generated.
     """
     type_map = {
         'String': 'str',
@@ -26,6 +28,7 @@ def model_field_filter(field_data: dict) -> str:
     field_type = field_data.get('type', 'String')
     py_type = type_map.get(field_type, 'str')
 
+    # Convert required string to boolean.
     required_val = field_data.get('required', False)
     if isinstance(required_val, str):
         required_val = (required_val.lower() == 'true')
@@ -38,11 +41,12 @@ def model_field_filter(field_data: dict) -> str:
         default_str = "Field(None"
 
     field_params = []
-    if 'minLength' in field_data:
+    # Only add built-in constraints if no custom message is provided.
+    if 'minLength' in field_data and 'minLength.message' not in field_data:
         field_params.append(f"min_length={field_data['minLength']}")
-    if 'maxLength' in field_data:
+    if 'maxLength' in field_data and 'maxLength.message' not in field_data:
         field_params.append(f"max_length={field_data['maxLength']}")
-    if 'pattern' in field_data:
+    if 'pattern' in field_data and 'pattern.message' not in field_data:
         field_params.append(f"regex=r'{field_data['pattern']}'")
     if 'enum' in field_data:
         field_params.append(f"description=\"Allowed values: {field_data['enum']}\"")
@@ -57,6 +61,12 @@ def model_field_filter(field_data: dict) -> str:
 
     return f"{base_type} = {default_str}"
 
+def combine_filter(dict1, dict2):
+    # Return a new dictionary combining dict1 and dict2, with dict2's keys taking precedence.
+    new_dict = dict1.copy()
+    new_dict.update(dict2)
+    return new_dict
+
 ############################
 # JINJA ENVIRONMENT SETUP
 ############################
@@ -67,8 +77,10 @@ def get_jinja_env() -> Environment:
         loader=FileSystemLoader(template_dir),
         autoescape=False,
         trim_blocks=True,
-        lstrip_blocks=True
+        lstrip_blocks=True,
+        extensions=['jinja2.ext.do']  # Enable the do extension
     )
+    env.filters['combine'] = combine_filter  # Register the combine filter
     return env
 
 ############################
