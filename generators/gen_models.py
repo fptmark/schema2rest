@@ -102,7 +102,7 @@ def generate_models(schema_file: str, path_root: str):
     os.makedirs(models_dir, exist_ok=True)
 
     if "BaseEntity" in schema and base_entity_template:
-        print("Generating BaseEntity.py...")
+        print("Generating model for BaseEntity")
         base_entity_def = schema["BaseEntity"]
         base_entity_fields = base_entity_def.get("fields", {})
         uniques = base_entity_def.get("uniques", [])
@@ -110,30 +110,62 @@ def generate_models(schema_file: str, path_root: str):
         base_entity_path = os.path.join(models_dir, "BaseEntity.py")
         with open(base_entity_path, "w") as f:
             f.write(rendered_base)
-        print("BaseEntity.py generated.")
 
-    special_keys = ["_relationships", "BaseEntity"]
+    # get dictionaries
+    if "_dictionaries" in schema:
+        dictionaries = schema["_dictionaries"]
+    else:
+        dicstionaries = None
+
+    special_keys = ["_relationships", "BaseEntity", "_dictionaries" ]
     for entity_name, entity_def in schema.items():
         if entity_name in special_keys:
             continue
 
+        print(f"Generating model for {entity_name}")
         inherits = entity_def.get("inherits")
         inherits_base = True if inherits and ("BaseEntity" in inherits) else False
         fields = entity_def.get("fields", {})
-        uniques = entity_def.get("uniques", [])
-        rendered_model = model_template.render(
-            entity=entity_name,
-            fields=fields,
-            inheritsBaseEntity=inherits_base,
-            uniques=uniques
-        )
-        out_filename = f"{entity_name.lower()}_model.py"
-        out_path = os.path.join(models_dir, out_filename)
-        with open(out_path, "w") as f:
-            f.write(rendered_model)
-        print(f"Generated {out_filename}")
 
-    print("Model generation complete!")
+        # insure that only the known attributes may have a .message.  Any changes must also be in the template
+        bad_attributes= valid_message_fields(fields)
+        if len(bad_attributes) > 0:
+            print(f" *** Aborting!  Unsupported custom message(s) {bad_attributes }")
+            exit(-1)
+        else:
+            # perform any dictionay lookups
+            for field, attributes in fields.items():
+                for attribute, value in attributes.items():
+                    if isinstance(value, str) and value.startswith("dict="):
+                        value = value[5:]
+                        fields[field][attribute] = get_dictionary_value(dictionaries, value)
+
+            uniques = entity_def.get("uniques", [])
+            rendered_model = model_template.render(
+                entity=entity_name,
+                fields=fields,
+                inheritsBaseEntity=inherits_base,
+                uniques=uniques
+            )
+            out_filename = f"{entity_name.lower()}_model.py"
+            out_path = os.path.join(models_dir, out_filename)
+            with open(out_path, "w") as f:
+                f.write(rendered_model)
+
+def get_dictionary_value(dictionaries, value):
+    words = value.split('.')
+    if dictionaries[words[0]]:
+        return dictionaries[words[0]][words[1]]
+    return value
+
+Valid_Attribute_Messages = ["minLength.message", "maxLength.message", "pattern.message"]
+def valid_message_fields(fields):
+    bad = []
+    for field, attributes in fields.items():
+        for attribute in attributes:
+            if '.message' in attribute and (attribute not in Valid_Attribute_Messages):
+                bad.append(f"{field}:{attribute}")
+    return bad
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:

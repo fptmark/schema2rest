@@ -6,9 +6,18 @@ import helpers
 import ast
 import yaml
 
+DICTIONARY = "%% @dictionary"
 UNIQUE = "%% @unique"
 VALIDATE = "%% @validate"
 INHERIT = "%% @inherit"
+
+### Define a custom formatter for single quoting strings in the yaml output
+class QuotedStr(str):
+   pass
+
+def quoted_str_representer(dumper, data):
+    return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='"')
+
 
 def clean(string):
    s = string.strip()
@@ -25,6 +34,7 @@ def parse(lines):
    fields = {}
    extras = []
    relationships = []
+   dictionaries = {}
     
    # Pattern for the entity header (e.g. "BaseEntity {")
    entity_header_pattern = re.compile(r'^(\w+)\s*\{')
@@ -42,6 +52,27 @@ def parse(lines):
       stripped = line.strip()
       if not stripped:
          continue
+
+      # Process dictionary lines
+      if stripped.startswith(DICTIONARY):
+        lexer = shlex.shlex(stripped, posix=True)
+        lexer.whitespace = ' '
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+        if tokens[3] == '{' and tokens[len(tokens)-1] == '}':
+            if tokens[2] in dictionaries:
+               dictionary = dictionaries[tokens[2]]
+            else:
+                dictionary = {}
+                dictionaries[tokens[2]] = dictionary
+            for i in range(4, len(tokens) - 2, 2 ):
+                value = tokens[i+1]
+                value = value[:-1] if value.endswith(',') else value
+                attribute = ''.join(filter(str.isalpha, tokens[i]))
+                dictionary[attribute] = QuotedStr(value)
+        continue
+
+         
 
       # If we're not inside an entity yet, look for an entity header.
       if not in_entity:
@@ -94,7 +125,7 @@ def parse(lines):
       if in_extras:
          extras.append(stripped)
    
-   return all_entities, relationships
+   return all_entities, relationships, dictionaries
 
 def process_extras(obj_dict):
 
@@ -211,7 +242,7 @@ def convert_validation_value(key, value):
     else:
         return value
 
-def generate_schema_yaml(entities, relationships, filename):
+def generate_schema_yaml(entities, relationships, dictionaries, filename):
     """
     Generates YAML output from the given entities dictionary and relationships list,
     and writes the YAML to the specified filename.
@@ -260,7 +291,7 @@ def generate_schema_yaml(entities, relationships, filename):
                 entities[child]["relations"].append(parent)
     
     # Construct final output object.
-    output_obj = {"_relationships": top_relationships}
+    output_obj = {"_relationships": top_relationships, "_dictionaries": dictionaries}
 
     for entity_name, entity_data in entities.items():
         # output Inheritance
@@ -283,9 +314,11 @@ if __name__ == "__main__":
       sys.exit(1)
 
    lines = helpers.read_file_to_array(infile)
+    
+   yaml.add_representer(QuotedStr, quoted_str_representer)  ## customer yaml outputter
 
-   obj_dict, relationships = parse(lines)
+   obj_dict, relationships, dictionaries = parse(lines)
 
    process_extras(obj_dict)
 
-   generate_schema_yaml(obj_dict, relationships, outfile)
+   generate_schema_yaml(obj_dict, relationships, dictionaries, outfile)

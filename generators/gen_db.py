@@ -29,7 +29,7 @@ def generate_db(schema_path, path_root):
     models = ""
     for model, _ in entity_schemas.items():
         model_lower = model.lower()
-        if model_lower != 'baseentity':
+        if model_lower not in ['baseentity', '_dictionaries'] :
             db_lines.append(f"from app.models.{model_lower}_model import {model.capitalize()}\n")
             models += f"{model.capitalize()}, "
 
