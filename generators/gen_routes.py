@@ -26,7 +26,7 @@ def generate_routes(schema_file: str, path_root: str):
     routes_dir = os.path.join(path_root, 'app', 'routes')
     os.makedirs(routes_dir, exist_ok=True)
 
-    special_keys = ["_relationships", "BaseEntity"]
+    special_keys = ["_relationships", "BaseEntity", "_dictionaries"]
     for entity_name, entity_def in schema.items():
         if entity_name in special_keys:
             continue
