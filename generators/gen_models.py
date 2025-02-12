@@ -158,7 +158,7 @@ def get_dictionary_value(dictionaries, value):
         return dictionaries[words[0]][words[1]]
     return value
 
-Valid_Attribute_Messages = ["minLength.message", "maxLength.message", "pattern.message"]
+Valid_Attribute_Messages = ["minLength.message", "maxLength.message", "pattern.message", "enum.message"]
 def valid_message_fields(fields):
     bad = []
     for field, attributes in fields.items():

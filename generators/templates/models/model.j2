@@ -30,36 +30,59 @@ class {{ entity|capitalize }}(Document):
     class Settings:
         name = "{{ entity|lower() }}"
 
-    {# Custom validators for fields with custom messages #}
+    {# Custom validators for fields with enum constraints or custom messages #}
     {% for field_name, field_info in fields.items() %}
-        {# Initialize a messages dictionary from keys ending with ".message" #}
-        {% set ns = namespace(messages = {}) %}
+        {# Initialize a namespace for custom messages #}
+        {% set ns = namespace(messages={}) %}
         {% for key, value in field_info.items() %}
             {% if key.endswith('.message') %}
                 {% set base_key = key[:-8] %}
                 {% set ns.messages = ns.messages | combine({base_key: value}) %}
             {% endif %}
         {% endfor %}
-        {% if ns.messages %}
+        {% if field_info.get('enum') is not none or ns.messages|length %}
     @validator('{{ field_name }}')
     def validate_{{ field_name }}(cls, v):
-        {# If a custom minLength message is provided, validate the length #}
-        {% if ns.messages.get('minLength') is not none and field_info.get('minLength') is not none %}
+        _custom = {{ ns.messages|tojson }}
+        {# minLength validation #}
+        {% if field_info.get('minLength') is not none %}
         if len(v) < {{ field_info.get('minLength') }}:
-            raise ValueError("{{ ns.messages.get('minLength') }}")
+            {% if ns.messages.get('minLength') is not none %}
+            raise ValueError(_custom["minLength"])
+            {% else %}
+            raise ValueError("{{ field_name }} must be at least {{ field_info.get('minLength') }} characters")
+            {% endif %}
         {% endif %}
-        {# If a custom maxLength message is provided #}
-        {% if ns.messages.get('maxLength') is not none and field_info.get('maxLength') is not none %}
+        {# maxLength validation #}
+        {% if field_info.get('maxLength') is not none %}
         if len(v) > {{ field_info.get('maxLength') }}:
-            raise ValueError("{{ ns.messages.get('maxLength') }}")
+            {% if ns.messages.get('maxLength') is not none %}
+            raise ValueError(_custom["maxLength"])
+            {% else %}
+            raise ValueError("{{ field_name }} must be at most {{ field_info.get('maxLength') }} characters")
+            {% endif %}
         {% endif %}
-        {# If a custom pattern message is provided #}
-        {% if ns.messages.get('pattern') is not none and field_info.get('pattern') is not none %}
+        {# pattern validation #}
+        {% if field_info.get('pattern') is not none %}
         if not re.match(r'{{ field_info.get("pattern") }}', v):
-            raise ValueError("{{ ns.messages.get('pattern') }}")
+            {% if ns.messages.get('pattern') is not none %}
+            raise ValueError(_custom["pattern"])
+            {% else %}
+            raise ValueError("{{ field_name }} is not in the correct format")
+            {% endif %}
+        {% endif %}
+        {# enum validation - always active if enum is defined #}
+        {% if field_info.get('enum') is not none %}
+        allowed = {{ field_info.get('enum')|tojson }}
+        if v not in allowed:
+            {% if ns.messages.get('enum') is not none %}
+            raise ValueError(_custom["enum"])
+            {% else %}
+            raise ValueError("{{ field_name }} must be one of " + ", ".join(allowed))
+            {% endif %}
         {% endif %}
         return v
-    {% endif %}
+        {% endif %}
     {% endfor %}
 
 {% if uniques %}

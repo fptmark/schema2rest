@@ -72,8 +72,6 @@ def parse(lines):
                 dictionary[attribute] = QuotedStr(value)
         continue
 
-         
-
       # If we're not inside an entity yet, look for an entity header.
       if not in_entity:
          header_match = entity_header_pattern.match(stripped)
@@ -183,7 +181,7 @@ def get_validation(i, tokens):
       while i < len(tokens) and tokens[i] != '}':
          word = clean(tokens[i])
          words.append(word[1:] if word.startswith("[") else word[:-1] if word.endswith("]") else word)
-         if tokens[i].endswith(']'):
+         if tokens[i].endswith(']') or tokens[i].endswith("],"):
             value = repr(words)
             return attribute, value, i + 1
          else:
