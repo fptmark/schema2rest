@@ -320,3 +320,7 @@ if __name__ == "__main__":
    process_extras(obj_dict)
 
    generate_schema_yaml(obj_dict, relationships, dictionaries, outfile)
+
+   # Create the index update script if needed
+   schema = helpers.get_schema("schema.yaml")
+   helpers.update_index_script(schema)
