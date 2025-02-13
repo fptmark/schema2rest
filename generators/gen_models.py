@@ -4,6 +4,9 @@ import os
 from jinja2 import Environment, FileSystemLoader
 import helpers
 
+DICTIONARY_KEY = "dictionary="
+
+
 ############################
 # CUSTOM FILTER
 ############################
@@ -136,8 +139,8 @@ def generate_models(schema_file: str, path_root: str):
             # perform any dictionay lookups
             for field, attributes in fields.items():
                 for attribute, value in attributes.items():
-                    if isinstance(value, str) and value.startswith("dict="):
-                        value = value[5:]
+                    if isinstance(value, str) and value.startswith(DICTIONARY_KEY):
+                        value = value[len(DICTIONARY_KEY):]
                         fields[field][attribute] = get_dictionary_value(dictionaries, value)
 
             uniques = entity_def.get("uniques", [])
