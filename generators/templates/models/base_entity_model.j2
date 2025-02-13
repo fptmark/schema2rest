@@ -5,7 +5,7 @@
 from beanie import Document, PydanticObjectId
 from pydantic import Field
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 class BaseEntity(Document):
     """
@@ -22,7 +22,7 @@ class BaseEntity(Document):
 
     {% set auto_generate_created = created_conf.get('autoGenerate', 'false')|lower == 'true' %}
     {% if auto_generate_created %}
-    createdAt: datetime = Field(default_factory=datetime.utcnow)
+    createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     {% else %}
     createdAt: Optional[datetime] = Field(None)
     {% endif %}
@@ -30,14 +30,14 @@ class BaseEntity(Document):
     {% set auto_generate_updated = updated_conf.get('autoGenerate', 'false')|lower == 'true' %}
     {% set auto_update_updated = updated_conf.get('autoUpdate', 'false')|lower == 'true' %}
     {% if auto_generate_updated %}
-    updatedAt: datetime = Field(default_factory=datetime.utcnow)
+    updatedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     {% else %}
     updatedAt: Optional[datetime] = Field(None)
     {% endif %}
 
     {% if auto_update_updated %}
     async def save(self, *args, **kwargs):
-        self.updatedAt = datetime.utcnow()
+        self.updatedAt = datetime.now(timezone.utc)
         return await super().save(*args, **kwargs)
     {% endif %}
 
