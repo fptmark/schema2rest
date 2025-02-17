@@ -303,6 +303,21 @@ def generate_schema_yaml(entities, relationships, dictionaries, filename):
 
     print(f"Schema written to {filename}")
 
+def convert_schema(schema_path, output_dir):
+   """
+   Convert a schema file to YAML format.
+    
+   Arguments:
+      schema_path: the path to the input schema file.
+      output_dir: the directory where the output YAML file will be saved.
+   """
+   yaml.add_representer(QuotedStr, quoted_str_representer)  ## customer yaml outputter
+
+   lines = helpers.read_file_to_array(schema_path)
+   obj_dict, relationships, dictionaries = parse(lines)
+   process_extras(obj_dict)
+   generate_schema_yaml(obj_dict, relationships, dictionaries, output_dir)
+
 if __name__ == "__main__":
    if len(sys.argv) == 3:
       infile = sys.argv[1]
@@ -311,16 +326,14 @@ if __name__ == "__main__":
       print(f"Usage: python {sys.argv[0]} <schema.mmd> <output_dir>")
       sys.exit(1)
 
-   lines = helpers.read_file_to_array(infile)
+   convert_schema(infile, outfile)
+
+   # lines = helpers.read_file_to_array(infile)
     
-   yaml.add_representer(QuotedStr, quoted_str_representer)  ## customer yaml outputter
+   # yaml.add_representer(QuotedStr, quoted_str_representer)  ## customer yaml outputter
 
-   obj_dict, relationships, dictionaries = parse(lines)
+   # obj_dict, relationships, dictionaries = parse(lines)
 
-   process_extras(obj_dict)
+   # process_extras(obj_dict)
 
-   generate_schema_yaml(obj_dict, relationships, dictionaries, outfile)
-
-   # Create the index update script if needed
-   schema = helpers.get_schema("schema.yaml")
-   helpers.update_index_script(schema)
+   # generate_schema_yaml(obj_dict, relationships, dictionaries, outfile)

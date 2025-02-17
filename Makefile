@@ -1,5 +1,5 @@
 S2R_DIR = ~/Projects/schema2rest
-GENERATORS = $(S2R_DIR)/generators
+GENERATORS = $(S2R_DIR)
 
 .PHONY: clean code
 
@@ -8,15 +8,14 @@ firsttime: setup schema code
 
 all: schema code run 
 
-schema: schema.yaml schema.png index.sh
-
-index.sh: schema.mmd
+schema: schema.yaml schema.png 
 
 clean: 
 	rm -rf app schema.yaml app.log schema.png
 
 code:	schema main db models routes
-	cp -r $(S2R_DIR)/utilities app
+	cp -r $(S2R_DIR)/helpers.py app
+	cp -r $(S2R_DIR)/config.py app
 
 models: $(GENERATORS)/gen_models.py schema.yaml $(GENERATORS)/templates/models/*
 	rm -rf app/models
@@ -39,6 +38,7 @@ setup:	$(S2R_DIR)/requirements.txt
 
 schema.yaml : schema.mmd $(GENERATORS)/schemaConvert.py
 	python $(GENERATORS)/schemaConvert.py schema.mmd .
+	python $(S2R_DIR)/update_indicies.py schema.yaml
 
 schema.png: schema.mmd
 	mmdc -i schema.mmd -o schema.png
