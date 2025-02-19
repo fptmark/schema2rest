@@ -118,8 +118,9 @@ def parse(lines):
     
     return all_entities, relationships, dictionaries
 
-def process_extras(obj_dict, dictionaries):
-    all_services = []  # global list of services
+def process_extras(obj_dict, dictionaries) -> tuple[set, set]:
+    all_services = set()  # global list of services
+    all_inherits = set()  # global list of inherited entities
 
     for entity, obj in obj_dict.items():
         inherits = []
@@ -130,7 +131,9 @@ def process_extras(obj_dict, dictionaries):
         for line in obj.get("extras", []):
             line = line.strip()
             if line.startswith(INHERIT):
-                inherits.append(process_inheritance(line))
+                inherit = process_inheritance(line)
+                inherits.append(inherit)
+                all_inherits.add(inherit)
             elif line.startswith(VALIDATE):
                 field, validation = process_validation(line, dictionaries)
                 validations[field] = validation
@@ -139,8 +142,7 @@ def process_extras(obj_dict, dictionaries):
             elif line.startswith(SERVICE):
                 service = process_service(line)
                 services.append(service)
-                if service not in all_services:
-                    all_services.append(service)
+                all_services.add(service)
 
         if "extras" in obj:
             del obj["extras"]
@@ -154,7 +156,7 @@ def process_extras(obj_dict, dictionaries):
         if inherits:
             obj["inherits"] = inherits
 
-    return all_services
+    return all_services, all_inherits
 
 def process_validation(line, dictionaries):
     field_validations = {}
@@ -238,7 +240,7 @@ def convert_validation_value(key, value):
     else:
         return value
 
-def generate_schema_yaml(entities, relationships, dictionaries, services, filename):
+def generate_schema_yaml(entities, relationships, dictionaries, services, inherits, filename):
     # Merge validations into fields.
     for entity_name, entity_data in entities.items():
         fields = entity_data.get("fields", {})
@@ -268,6 +270,7 @@ def generate_schema_yaml(entities, relationships, dictionaries, services, filena
         "_relationships": top_relationships,
         "_dictionaries": dictionaries,
         "_services": services,
+        "_inherited_entities": inherits,
         "_entities": entities
     }
 
@@ -280,8 +283,8 @@ def convert_schema(schema_path, output_dir):
     yaml.add_representer(QuotedStr, quoted_str_representer)
     lines = helpers.read_file_to_array(schema_path)
     obj_dict, relationships, dictionaries = parse(lines)
-    services = process_extras(obj_dict, dictionaries)
-    generate_schema_yaml(obj_dict, relationships, dictionaries, services, output_dir)
+    services, inherits = process_extras(obj_dict, dictionaries)
+    generate_schema_yaml(obj_dict, relationships, dictionaries, list(services), list(inherits), output_dir)
 
 if __name__ == "__main__":
     if len(sys.argv) == 3:

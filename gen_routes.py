@@ -2,7 +2,6 @@
 import sys
 import os
 from jinja2 import Environment, FileSystemLoader
-import helpers
 from schema import Schema
 
 def get_jinja_env() -> Environment:
