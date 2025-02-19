@@ -34,7 +34,7 @@ def parse(lines):
     all_entities = {}
     current_entity = None
     fields = {}
-    extras = []
+    decorations = []
     relationships = []
     dictionaries = {}
     
@@ -80,7 +80,7 @@ def parse(lines):
                 print(f"Processing entity: {current_entity}")
                 in_entity = True
                 fields = {}
-                extras = []
+                decorations = []
             elif stripped.find(RELATION_SPEC) > 0:
                 words = stripped.split(RELATION_SPEC)
                 child = words[0].strip()
@@ -94,14 +94,14 @@ def parse(lines):
             if current_entity:
                 all_entities[current_entity] = {
                     "fields": fields,
-                    "extras": extras
+                    "decorations": decorations
                 }
             current_entity = None
             continue
 
-        # Process fields or extras
+        # Process fields or decorations
         if stripped.startswith('%% @'):  
-            extras.append(stripped)
+            decorations.append(stripped)
         else:
             words = stripped.split()
             if len(words) >= 2:
@@ -111,14 +111,14 @@ def parse(lines):
 
                 # check for inline validation
                 if len(words) > 6 and f'{words[2]} {words[3]}' == VALIDATE:
-                   # Add validation to extras
-                   extra = f"{VALIDATE} {field_name}: {' '.join(words[4:])}"
-                   extras.append(extra)
+                   # Add validation to decorations
+                   decorator = f"{VALIDATE} {field_name}: {' '.join(words[4:])}"
+                   decorations.append(decorator)
                 continue
     
     return all_entities, relationships, dictionaries
 
-def process_extras(obj_dict, dictionaries) -> tuple[set, set]:
+def process_entity_decorations(obj_dict, dictionaries) -> tuple[set, set]:
     all_services = set()  # global list of services
     all_inherits = set()  # global list of inherited entities
 
@@ -128,7 +128,7 @@ def process_extras(obj_dict, dictionaries) -> tuple[set, set]:
         uniques = []
         services = []
 
-        for line in obj.get("extras", []):
+        for line in obj.get("decorations", []):
             line = line.strip()
             if line.startswith(INHERIT):
                 inherit = process_inheritance(line)
@@ -144,8 +144,8 @@ def process_extras(obj_dict, dictionaries) -> tuple[set, set]:
                 services.append(service)
                 all_services.add(service)
 
-        if "extras" in obj:
-            del obj["extras"]
+        if "decorations" in obj:
+            del obj["decorations"]
 
         if validations:
             obj["validations"] = validations
@@ -283,7 +283,7 @@ def convert_schema(schema_path, output_dir):
     yaml.add_representer(QuotedStr, quoted_str_representer)
     lines = helpers.read_file_to_array(schema_path)
     obj_dict, relationships, dictionaries = parse(lines)
-    services, inherits = process_extras(obj_dict, dictionaries)
+    services, inherits = process_entity_decorations(obj_dict, dictionaries)
     generate_schema_yaml(obj_dict, relationships, dictionaries, list(services), list(inherits), output_dir)
 
 if __name__ == "__main__":
