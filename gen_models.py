@@ -3,6 +3,7 @@ import sys
 import os
 from jinja2 import Environment, FileSystemLoader
 import helpers
+from schema import Schema
 
 DICTIONARY_KEY = "dictionary="
 
@@ -92,7 +93,7 @@ def get_jinja_env() -> Environment:
 def generate_models(schema_file: str, path_root: str):
     print("Generating models...")
     models_dir = os.path.join(path_root, "app", "models")
-    schema = helpers.get_schema(schema_file)
+    schema = Schema(schema_file)
     env = get_jinja_env()
     env.filters['model_field'] = model_field_filter
 
@@ -104,9 +105,10 @@ def generate_models(schema_file: str, path_root: str):
     model_template = env.get_template("model.j2")
     os.makedirs(models_dir, exist_ok=True)
 
-    if "BaseEntity" in schema and base_entity_template:
+    # Todo: create an arbitraty inherited entity
+    if "BaseEntity" in schema.inherited_entities() and base_entity_template:
         print("Generating model for BaseEntity")
-        base_entity_def = schema["BaseEntity"]
+        base_entity_def = schema.entity("BaseEntity")
         base_entity_fields = base_entity_def.get("fields", {})
         uniques = base_entity_def.get("uniques", [])
         rendered_base = base_entity_template.render(entity="BaseEntity", fields=base_entity_fields, uniques=uniques)
@@ -114,16 +116,7 @@ def generate_models(schema_file: str, path_root: str):
         with open(base_entity_path, "w") as f:
             f.write(rendered_base)
 
-    # get dictionaries
-    if "_dictionaries" in schema:
-        dictionaries = schema["_dictionaries"]
-    else:
-        dicstionaries = None
-
-    special_keys = ["_relationships", "BaseEntity", "_dictionaries" ]
-    for entity_name, entity_def in schema.items():
-        if entity_name in special_keys:
-            continue
+    for entity_name, entity_def in schema.concrete_entities().items():
 
         print(f"Generating model for {entity_name}")
         inherits = entity_def.get("inherits")
@@ -141,7 +134,7 @@ def generate_models(schema_file: str, path_root: str):
                 for attribute, value in attributes.items():
                     if isinstance(value, str) and value.startswith(DICTIONARY_KEY):
                         value = value[len(DICTIONARY_KEY):]
-                        fields[field][attribute] = get_dictionary_value(dictionaries, value)
+                        fields[field][attribute] = get_dictionary_value(schema.dictionaries(), value)
 
             uniques = entity_def.get("uniques", [])
             rendered_model = model_template.render(

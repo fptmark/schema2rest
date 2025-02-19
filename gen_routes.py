@@ -3,6 +3,7 @@ import sys
 import os
 from jinja2 import Environment, FileSystemLoader
 import helpers
+from schema import Schema
 
 def get_jinja_env() -> Environment:
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -19,17 +20,14 @@ def get_jinja_env() -> Environment:
 
 def generate_routes(schema_file: str, path_root: str):
     print("Generating routes...")
-    schema = helpers.get_schema(schema_file)
+    schema = Schema(schema_file)
     env = get_jinja_env()
     route_template = env.get_template('route.j2')
 
     routes_dir = os.path.join(path_root, 'app', 'routes')
     os.makedirs(routes_dir, exist_ok=True)
 
-    special_keys = ["_relationships", "BaseEntity", "_dictionaries"]
-    for entity_name, entity_def in schema.items():
-        if entity_name in special_keys:
-            continue
+    for entity_name, entity_def in schema.concrete_entities().items():
 
         rendered = route_template.render(entity=entity_name)
         out_filename = f"{entity_name.lower()}_router.py"

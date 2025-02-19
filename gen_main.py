@@ -1,6 +1,7 @@
 from pathlib import Path
 import sys
 import helpers
+from schema import Schema
 
 script_dir = Path(__file__).resolve().parent
 
@@ -12,26 +13,23 @@ TEMPLATE = str(script_dir / "templates" / "main" / "main")
 
 def generate_main(schema_path, path_root):
 
-    entity_schemas = helpers.get_schema(schema_path)
+    schema = Schema(schema_path)
 
     # Start building the main.py content
     lines = helpers.read_file_to_array(TEMPLATE, 1)
 
     # Import routes dynamically for valid entities
-    for entity, _ in entity_schemas.items():
+    for entity, _ in schema.concrete_entities().items():
         entity_lower = entity.lower()
-        if entity_lower not in ['baseentity', '_dictionaries']:
-            # print(f"from app.routes.{entity_lower}_routes import router as {entity_lower}_router\n")
-            lines.append(f"from app.routes.{entity_lower}_router import router as {entity_lower}_router\n")
+        lines.append(f"from app.routes.{entity_lower}_router import router as {entity_lower}_router\n")
 
     # Initialize FastAPI app
     lines.extend( helpers.read_file_to_array(TEMPLATE, 2))
 
     # Register routes dynamically
-    for entity, _ in entity_schemas.items():
+    for entity, _ in schema.concrete_entities().items():
         entity_lower = entity.lower()
-        if entity_lower not in ['baseentity', '_dictionaries']:
-            lines.append(f"app.include_router({entity_lower}_router, prefix='/{entity_lower}', tags=['{entity}'])\n")
+        lines.append(f"app.include_router({entity_lower}_router, prefix='/{entity_lower}', tags=['{entity}'])\n")
 
     # Add root endpoint
     lines.extend( helpers.read_file_to_array(TEMPLATE, 3))

@@ -35,17 +35,17 @@ def read_file_to_array(template: str, num=0)-> list[str]:
         print(f"Error reading the file '{file_name}': {e}")
         return []
 
-RESERVED_TYPES = {"ISODate", "ObjectId", "_relationships"}
-def get_schema(schema_path: str, reserved_types=RESERVED_TYPES)-> dict:
-    with open(schema_path, "r") as file:
-        schema = yaml.safe_load(file)
+# RESERVED_TYPES = {"ISODate", "ObjectId", "_relationships"}
+# def get_schema(schema_path: str, reserved_types=RESERVED_TYPES)-> dict:
+#     with open(schema_path, "r") as file:
+#         schema = yaml.safe_load(file)
 
-    # Extract entity schemas, skipping reserved types and metadata keys
-    entity_schemas = {
-        name: details for name, details in schema.items() if name not in reserved_types and isinstance(details, dict)
-    }
-    # print(f"{entity_schemas}")#['name']}")
-    return entity_schemas
+#     # Extract entity schemas, skipping reserved types and metadata keys
+#     entity_schemas = {
+#         name: details for name, details in schema.items() if name not in reserved_types and isinstance(details, dict)
+#     }
+#     # print(f"{entity_schemas}")#['name']}")
+#     return entity_schemas
 
 def singularize(name):
     if name.endswith("ies"):  # e.g., categories → category

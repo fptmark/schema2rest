@@ -3,8 +3,18 @@ GENERATORS = $(S2R_DIR)
 
 .PHONY: clean code
 
-firsttime: setup schema code 
+firsttime: setup schema code redis services
+	brew install mongo
+	brew install redis
 	cp $(S2R_DIR)/config.json config.json
+
+redis:
+	brew install redis
+	brew services start redis
+
+services: $(S2R_DIR)/services/*
+	mkdir -p app/services
+	cp -r $(S2R_DIR)/services app
 
 all: schema code run 
 
@@ -15,7 +25,8 @@ clean:
 
 code:	schema main db models routes
 	cp -r $(S2R_DIR)/helpers.py app
-	cp -r $(S2R_DIR)/config.py app
+	mkdir -p app/utilities
+	cp -r $(S2R_DIR)/config.py app/utilities
 
 models: $(GENERATORS)/gen_models.py schema.yaml $(GENERATORS)/templates/models/*
 	rm -rf app/models

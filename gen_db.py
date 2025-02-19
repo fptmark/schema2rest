@@ -1,6 +1,7 @@
 from pathlib import Path
 import sys
 import helpers
+from schema import Schema
 
 script_dir = Path(__file__).resolve().parent
 
@@ -14,7 +15,7 @@ def generate_db(schema_path, path_root):
     Generate the db.py file for MongoDB connection and Beanie initialization.
     """
     # Load the YAML schema
-    entity_schemas = helpers.get_schema(schema_path)
+    schema = Schema(schema_path)
 
     # Generate db.py
     db_lines = [
@@ -26,9 +27,8 @@ def generate_db(schema_path, path_root):
 
     # Dynamically add imports for each model
     models = ""
-    for model, _ in entity_schemas.items():
-        model_lower = model.lower()
-        if model_lower not in ['baseentity', '_dictionaries'] :
+    for model, _ in schema.concrete_entities().items():
+            model_lower = model.lower()
             db_lines.append(f"from app.models.{model_lower}_model import {model.capitalize()}\n")
             models += f"{model.capitalize()}, "
 

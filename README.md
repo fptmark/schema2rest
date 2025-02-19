@@ -20,6 +20,8 @@ The data is stored in a Mongo database
 1. Allows a "BaseEntity" that all entities include (e.g. - id, updatedAt)
 2. Supports auto generation of files (e.g. - id)
 3. Supports extensive validation logic
+4. Supports unique field contraints
+5. Automatically updates unique indexes for contraints (deletes unused and creates new) 
 
 
 ## MMD Snippet
@@ -53,6 +55,7 @@ erDiagram
     }
     %% @inherits BaseEntity
     %% @validation User
+    %% @unique username ### Note specified combined field indexes by "username + email"
     %% accountId: { type: ObjectId, required: true }
     %% username: { type: String, required: true, minLength: 3, maxLength: 50 }
     %% email { type String, required true, minLength 8, maxLength 50, pattern ^[a-zA-Z0-9._%-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ }

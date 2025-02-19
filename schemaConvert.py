@@ -10,6 +10,7 @@ DICTIONARY = "%% @dictionary"
 UNIQUE = "%% @unique"
 VALIDATE = "%% @validate"
 INHERIT = "%% @inherit"
+AUTHENTICATE = "%% @authenticate"
 
 ### Define a custom formatter for single quoting strings in the yaml output
 class QuotedStr(str):
@@ -127,11 +128,14 @@ def parse(lines):
 
 def process_extras(obj_dict):
 
+   all_services = [] # global list of services
+
    for entity, object in obj_dict.items():
-      # process the extras to extract the validation, inheritance and unique data
+      # process the extras to extract the validation, inheritance and unique data for each entity
       inherits = []
       validations = {}
       uniques = []
+
       for line in object["extras"]:
         if line.startswith(INHERIT):
            inherits.append( process_inheritance(line) ) 
@@ -139,7 +143,14 @@ def process_extras(obj_dict):
           field, validation = process_validation(line)
           validations[field] = validation
         elif line.startswith(UNIQUE):
-           uniques.append( {'fields': process_unique(line, uniques) } )
+           uniques.append( {'fields': process_unique(line) } )
+        # @authenticate is considered a service.  It is inherited by the entity and
+        # added to the list of global services 
+        elif line.startswith(AUTHENTICATE):
+           service = 'services.auth.' + process_authenticate(line)
+           inherits.append( service )
+           if service not in all_services:
+              all_services.append(service)
 
       del obj_dict[entity]["extras"]
       if len(validations) > 0:
@@ -148,6 +159,8 @@ def process_extras(obj_dict):
           obj_dict[entity]["inherits"] = inherits
       if len(uniques) > 0:
           obj_dict[entity]["uniques"] = uniques
+
+   return all_services
  
       
 
@@ -194,9 +207,14 @@ def process_inheritance(line):
    return line.strip()
 
 # Handle '%% @unique email', or '%% @unique email, phone'
-def process_unique(line, uniques):
+def process_unique(line):
    line = line[len(UNIQUE):]
    return split_strip(line, '+')
+
+# Handle '%% @unique email', or '%% @unique email, phone'
+def process_authenticate(line):
+   words = line[len(AUTHENTICATE):].strip().split(' ')
+   return words[0]
 
 def split_strip(line, sep=','):
    return [word.strip() for word in line.split(sep) if word.strip()]
@@ -216,7 +234,7 @@ def convert_validation_value(key, value):
     - Otherwise, return the value unchanged.
     """
     bool_keys = {"required", "autoGenerate", "autoUpdate"}
-    numeric_keys = {"minLength", "maxLength"}
+    numeric_keys = {"minLength", "maxLength", "min", "max", "lt", "gt", "lte", "gte"}
     
     if key in bool_keys:
         if isinstance(value, str):
@@ -240,7 +258,7 @@ def convert_validation_value(key, value):
     else:
         return value
 
-def generate_schema_yaml(entities, relationships, dictionaries, filename):
+def generate_schema_yaml(entities, relationships, dictionaries, services, filename):
     """
     Generates YAML output from the given entities dictionary and relationships list,
     and writes the YAML to the specified filename.
@@ -263,6 +281,9 @@ def generate_schema_yaml(entities, relationships, dictionaries, filename):
       4. Builds a top-level _relationships list.
       5. Writes the final output object as YAML.
     """
+    # get list of all inherits which includes explict and services (e.g. - auth)
+    inherits = set()
+
     # Merge validations into fields.
     for entity_name, entity_data in entities.items():
         fields = entity_data.get("fields", {})
@@ -273,31 +294,42 @@ def generate_schema_yaml(entities, relationships, dictionaries, filename):
                 for key, val in validations[field_name].items():
                     merged[key] = convert_validation_value(key, val)
             fields[field_name] = merged
+
+        # Done with validations, so remove them.
         if "validations" in entity_data:
             del entity_data["validations"]
-        if "relations" not in entity_data:
-            entity_data["relations"] = []
+         
+         # get full list of inherits
+        if "inherits" in entity_data:
+           inherits.update(entity_data["inherits"])
+
+      #   if "relations" not in entity_data:
+        entity_data["relationships"] = []
     
     # Process relationships: build top-level _relationships and update each entity's "relations".
     top_relationships = []
     for child, parent in relationships:
         top_relationships.append({"source": child, "target": parent})
         if child in entities:
-            if "relations" not in entities[child]:
-                entities[child]["relations"] = []
-            if parent not in entities[child]["relations"]:
-                entities[child]["relations"].append(parent)
+            # if "relations" not in entities[child]:
+               #  entities[child]["relations"] = []
+            if parent not in entities[child]["relationships"]:
+                entities[child]["relationships"].append(parent)
+    
+
+   #  entity_output = {}
+
+   #  for entity_name, entity_data in entities.items():
+   #      # output Inheritance
+   #      if "inherits" in entity_data and not isinstance(entity_data["inherits"], list):
+   #          entity_data["inherits"] = [entity_data["inherits"]]
+    
+   #      entity_output[entity_name] = entity_data
     
     # Construct final output object.
-    output_obj = {"_relationships": top_relationships, "_dictionaries": dictionaries}
+    output_obj = {"_relationships": top_relationships, "_dictionaries": dictionaries, 
+                  "_services": services, "_entities": entities, "_inherited_entities": list(inherits)}  
 
-    for entity_name, entity_data in entities.items():
-        # output Inheritance
-        if "inherits" in entity_data and not isinstance(entity_data["inherits"], list):
-            entity_data["inherits"] = [entity_data["inherits"]]
-    
-        output_obj[entity_name] = entity_data
-    
     with open(filename, "w") as f:
         yaml.dump(output_obj, f, sort_keys=False)
 
@@ -315,8 +347,8 @@ def convert_schema(schema_path, output_dir):
 
    lines = helpers.read_file_to_array(schema_path)
    obj_dict, relationships, dictionaries = parse(lines)
-   process_extras(obj_dict)
-   generate_schema_yaml(obj_dict, relationships, dictionaries, output_dir)
+   services = process_extras(obj_dict)
+   generate_schema_yaml(obj_dict, relationships, dictionaries, services, output_dir)
 
 if __name__ == "__main__":
    if len(sys.argv) == 3:
