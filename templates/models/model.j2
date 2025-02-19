@@ -1,50 +1,55 @@
-{% if inheritsBaseEntity %}
-from .BaseEntity import BaseEntity
-from beanie import PydanticObjectId
+{# Dynamic import generation using raw_inherits #}
+{% if raw_inherits %}
+{% for base in raw_inherits %}
+    {% if base is string %}
+from .{{ base|lower() }}_model import {{ base }}
+    {% elif base is mapping %}
+        {% for key, value in base.items() %}
+            {% if key == "service" %}
+                {% for service in value %}
+import app.services.{{ service }}
+                {% endfor %}
+            {% else %}
+# TODO: Import for {{ key }}: {{ value }}
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+{% endfor %}
 {% else %}
 from beanie import Document
 {% endif %}
+from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, Field, validator
 from typing import Optional
 from datetime import datetime
 import re
 import json
 
-{% if uniques %}
 class UniqueValidationError(Exception):
     def __init__(self, fields, query):
         self.fields = fields
         self.query = query
-        super().__init__(f"Unique constraint violated for fields: {', '.join(fields)}")
-{% endif %}
+    def __str__(self):
+        return f"Unique constraint violation for fields {self.fields}: {self.query}"
 
-{% if inheritsBaseEntity %}
-class {{ entity|capitalize }}(BaseEntity):
-{% else %}
-class {{ entity|capitalize }}(Document):
-{% endif %}
+
+class {{ entity }}Base(BaseModel):
 {% for field_name, field_info in fields.items() %}
     {{ field_name }}: {{ field_info|model_field }}
 {% endfor %}
 
-    class Settings:
-        name = "{{ entity|lower() }}"
-
-    {# Custom validators for fields with enum constraints or custom messages #}
+    {# Custom validators for fields with constraints #}
     {% for field_name, field_info in fields.items() %}
-        {# Initialize a namespace for custom messages #}
         {% set ns = namespace(messages={}) %}
         {% for key, value in field_info.items() %}
             {% if key.endswith('.message') %}
-                {% set base_key = key[:-8] %}
-                {% set ns.messages = ns.messages | combine({base_key: value}) %}
+                {% set ns.messages = ns.messages | combine({ key[:-8]: value }) %}
             {% endif %}
         {% endfor %}
         {% if field_info.get('enum') is not none or ns.messages|length %}
     @validator('{{ field_name }}')
     def validate_{{ field_name }}(cls, v):
         _custom = {{ ns.messages|tojson }}
-        {# minLength validation #}
         {% if field_info.get('minLength') is not none %}
         if len(v) < {{ field_info.get('minLength') }}:
             {% if ns.messages.get('minLength') is not none %}
@@ -53,7 +58,6 @@ class {{ entity|capitalize }}(Document):
             raise ValueError("{{ field_name }} must be at least {{ field_info.get('minLength') }} characters")
             {% endif %}
         {% endif %}
-        {# maxLength validation #}
         {% if field_info.get('maxLength') is not none %}
         if len(v) > {{ field_info.get('maxLength') }}:
             {% if ns.messages.get('maxLength') is not none %}
@@ -62,7 +66,6 @@ class {{ entity|capitalize }}(Document):
             raise ValueError("{{ field_name }} must be at most {{ field_info.get('maxLength') }} characters")
             {% endif %}
         {% endif %}
-        {# pattern validation #}
         {% if field_info.get('pattern') is not none %}
         if not re.match(r'{{ field_info.get("pattern") }}', v):
             {% if ns.messages.get('pattern') is not none %}
@@ -71,7 +74,6 @@ class {{ entity|capitalize }}(Document):
             raise ValueError("{{ field_name }} is not in the correct format")
             {% endif %}
         {% endif %}
-        {# enum validation - always active if enum is defined #}
         {% if field_info.get('enum') is not none %}
         allowed = {{ field_info.get('enum')|tojson }}
         if v not in allowed:
@@ -85,9 +87,14 @@ class {{ entity|capitalize }}(Document):
         {% endif %}
     {% endfor %}
 
-{% if uniques %}
-    async def validate_uniques(self):
+
+class {{ entity }}({{ inherits|join(', ') }}, {{ entity }}Base):
+    class Settings:
+        name = "{{ entity|lower() }}"
+
+    {% if uniques %}
     {% for unique in uniques %}
+    async def validate_uniques(self):
         # Unique constraint on fields: {{ unique.fields|join(', ') }}
         query = {
         {% for field in unique.fields %}
@@ -102,27 +109,18 @@ class {{ entity|capitalize }}(Document):
     async def save(self, *args, **kwargs):
         await self.validate_uniques()
         return await super().save(*args, **kwargs)
-{% else %}
+    {% else %}
     async def save(self, *args, **kwargs):
         return await super().save(*args, **kwargs)
-{% endif %}
+    {% endif %}
 
-class {{ entity|capitalize }}Create(BaseModel):
-{% for field_name, field_info in fields.items() %}
-    {{ field_name }}: {{ field_info|model_field }}
-{% endfor %}
+
+class {{ entity }}Create({{ entity }}Base):
     class Config:
         orm_mode = True
 
-class {{ entity|capitalize }}Read(BaseModel):
-{% if inheritsBaseEntity %}
-    id: Optional[PydanticObjectId] = Field(None, alias="_id")
-    createdAt: Optional[datetime] = None
-    updatedAt: Optional[datetime] = None
-{% endif %}
-{% for field_name, field_info in fields.items() %}
-    {{ field_name }}: {{ field_info|model_field }}
-{% endfor %}
+
+class {{ entity }}Read({{ entity }}Base):
     class Config:
         orm_mode = True
         allow_population_by_field_name = True

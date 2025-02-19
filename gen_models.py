@@ -2,22 +2,16 @@
 import sys
 import os
 from jinja2 import Environment, FileSystemLoader
-import helpers
 from schema import Schema
 
 DICTIONARY_KEY = "dictionary="
-
 
 ############################
 # CUSTOM FILTER
 ############################
 def model_field_filter(field_data: dict) -> str:
     """
-    Convert a dict of validations (e.g., {'type': 'String', 'required': True, ...})
-    into a Python type annotation for Pydantic.
-
-    If a custom error message is provided (e.g. with keys like "minLength.message" or "pattern.message"),
-    the corresponding constraint will be omitted from the Field() call so that a custom validator can be generated.
+    Convert a dict of validations into a Python type annotation for Pydantic.
     """
     type_map = {
         'String': 'str',
@@ -28,11 +22,9 @@ def model_field_filter(field_data: dict) -> str:
         'ObjectId': 'PydanticObjectId',  # Use Beanie's type
         'JSON': 'dict'
     }
-
     field_type = field_data.get('type', 'String')
     py_type = type_map.get(field_type, 'str')
 
-    # Convert required string to boolean.
     required_val = field_data.get('required', False)
     if isinstance(required_val, str):
         required_val = (required_val.lower() == 'true')
@@ -45,7 +37,6 @@ def model_field_filter(field_data: dict) -> str:
         default_str = "Field(None"
 
     field_params = []
-    # Only add built-in constraints if no custom message is provided.
     if 'minLength' in field_data and 'minLength.message' not in field_data:
         field_params.append(f"min_length={field_data['minLength']}")
     if 'maxLength' in field_data and 'maxLength.message' not in field_data:
@@ -66,7 +57,6 @@ def model_field_filter(field_data: dict) -> str:
     return f"{base_type} = {default_str}"
 
 def combine_filter(dict1, dict2):
-    # Return a new dictionary combining dict1 and dict2, with dict2's keys taking precedence.
     new_dict = dict1.copy()
     new_dict.update(dict2)
     return new_dict
@@ -82,9 +72,9 @@ def get_jinja_env() -> Environment:
         autoescape=False,
         trim_blocks=True,
         lstrip_blocks=True,
-        extensions=['jinja2.ext.do']  # Enable the do extension
+        extensions=['jinja2.ext.do']
     )
-    env.filters['combine'] = combine_filter  # Register the combine filter
+    env.filters['combine'] = combine_filter
     return env
 
 ############################
@@ -98,60 +88,55 @@ def generate_models(schema_file: str, path_root: str):
     env.filters['model_field'] = model_field_filter
 
     try:
-        base_entity_template = env.get_template("base_entity_model.j2")
+        model_template = env.get_template("model.j2")
     except Exception as e:
-        base_entity_template = None
+        print("Error loading model.j2 template:", e)
+        return
 
-    model_template = env.get_template("model.j2")
     os.makedirs(models_dir, exist_ok=True)
 
-    # Todo: create an arbitraty inherited entity
-    if "BaseEntity" in schema.inherited_entities() and base_entity_template:
-        print("Generating model for BaseEntity")
-        base_entity_def = schema.entity("BaseEntity")
-        base_entity_fields = base_entity_def.get("fields", {})
-        uniques = base_entity_def.get("uniques", [])
-        rendered_base = base_entity_template.render(entity="BaseEntity", fields=base_entity_fields, uniques=uniques)
-        base_entity_path = os.path.join(models_dir, "BaseEntity.py")
-        with open(base_entity_path, "w") as f:
-            f.write(rendered_base)
+    # Iterate over all entities dynamically (no special-case for any name)
+    for entity_name, entity_def in schema.all_entities().items():
+        print(f"Generating model for {entity_name}...")
+        raw_inherits = entity_def.get("inherits", [])
+        processed_bases = []
+        for base in raw_inherits:
+            if isinstance(base, dict) and "service" in base:
+                for s in base["service"]:
+                    processed_bases.append(s)
+            elif isinstance(base, str):
+                processed_bases.append(base)
+        if not processed_bases:
+            processed_bases = ["Document"]
 
-    for entity_name, entity_def in schema.concrete_entities().items():
-
-        print(f"Generating model for {entity_name}")
-        inherits = entity_def.get("inherits")
-        inherits_base = True if inherits and ("BaseEntity" in inherits) else False
         fields = entity_def.get("fields", {})
 
-        # insure that only the known attributes may have a .message.  Any changes must also be in the template
-        bad_attributes= valid_message_fields(fields)
-        if len(bad_attributes) > 0:
-            print(f" *** Aborting!  Unsupported custom message(s) {bad_attributes }")
-            exit(-1)
-        else:
-            # perform any dictionay lookups
-            for field, attributes in fields.items():
-                for attribute, value in attributes.items():
-                    if isinstance(value, str) and value.startswith(DICTIONARY_KEY):
-                        value = value[len(DICTIONARY_KEY):]
-                        fields[field][attribute] = get_dictionary_value(schema.dictionaries(), value)
+        # Process dictionary lookups.
+        for field, attributes in fields.items():
+            for attribute, value in attributes.items():
+                if isinstance(value, str) and value.startswith(DICTIONARY_KEY):
+                    value = value[len(DICTIONARY_KEY):]
+                    # Update the attribute with the looked-up value
+                    fields[field][attribute] = get_dictionary_value(schema.dictionaries(), value)
 
-            uniques = entity_def.get("uniques", [])
-            rendered_model = model_template.render(
-                entity=entity_name,
-                fields=fields,
-                inheritsBaseEntity=inherits_base,
-                uniques=uniques
-            )
-            out_filename = f"{entity_name.lower()}_model.py"
-            out_path = os.path.join(models_dir, out_filename)
-            with open(out_path, "w") as f:
-                f.write(rendered_model)
+        uniques = entity_def.get("uniques", [])
+        rendered_model = model_template.render(
+            entity=entity_name,
+            fields=fields,
+            inherits=processed_bases,  # For class declaration
+            raw_inherits=raw_inherits,  # For generating imports
+            uniques=uniques
+        )
+        out_filename = f"{entity_name.lower()}_model.py"
+        out_path = os.path.join(models_dir, out_filename)
+        with open(out_path, "w") as f:
+            f.write(rendered_model)
+
 
 def get_dictionary_value(dictionaries, value):
     words = value.split('.')
-    if dictionaries[words[0]]:
-        return dictionaries[words[0]][words[1]]
+    if dictionaries.get(words[0]):
+        return dictionaries[words[0]].get(words[1], value)
     return value
 
 Valid_Attribute_Messages = ["minLength.message", "maxLength.message", "pattern.message", "enum.message"]

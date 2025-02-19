@@ -10,229 +10,209 @@ DICTIONARY = "%% @dictionary"
 UNIQUE = "%% @unique"
 VALIDATE = "%% @validate"
 INHERIT = "%% @inherit"
-AUTHENTICATE = "%% @authenticate"
+SERVICE = "%% @service"
 
-### Define a custom formatter for single quoting strings in the yaml output
+### Define a custom formatter for quoting strings in the YAML output
 class QuotedStr(str):
-   pass
+    pass
 
 def quoted_str_representer(dumper, data):
     return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='"')
 
+yaml.add_representer(QuotedStr, quoted_str_representer)
 
 def clean(string):
-   s = string.strip()
-   position = s.find(':')
-   if position > 0:
-      return s[:position]
-   elif s.endswith(','):
-      return s[:-1]
-   return s
+    s = string.strip()
+    position = s.find(':')
+    if position > 0:
+        return s[:position]
+    elif s.endswith(','):
+        return s[:-1]
+    return s
 
 def parse(lines):
-   all_entities = {}
-   current_entity = None
-   fields = {}
-   extras = []
-   relationships = []
-   dictionaries = {}
+    all_entities = {}
+    current_entity = None
+    fields = {}
+    extras = []
+    relationships = []
+    dictionaries = {}
     
-   # Pattern for the entity header (e.g. "BaseEntity {")
-   entity_header_pattern = re.compile(r'^(\w+)\s*\{')
-   # Pattern for a field definition line: must match something like "ObjectId _id"
-   field_pattern = re.compile(r'^(\w+)\s+(\w+)$')
+    # Pattern for the entity header (e.g. "BaseEntity {")
+    entity_header_pattern = re.compile(r'^(\w+)\s*\{')
+    # Pattern for a field definition line: must match something like "ObjectId _id"
+   #  field_pattern = re.compile(r'^(\w+)\s+(\w+)$')
     
-   RELATION_SPEC = "||--o{"
+    RELATION_SPEC = "||--o{"
 
-   in_entity = False
-   in_extras = False
+    in_entity = False
 
-   for line in lines:
-      # Remove newline characters.
-      line = line.rstrip('\n')
-      stripped = line.strip()
-      if not stripped:
-         continue
-
-      # Process dictionary lines
-      if stripped.startswith(DICTIONARY):
-        lexer = shlex.shlex(stripped, posix=True)
-        lexer.whitespace = ' '
-        lexer.whitespace_split = True
-        tokens = list(lexer)
-        if tokens[3] == '{' and tokens[len(tokens)-1] == '}':
-            if tokens[2] in dictionaries:
-               dictionary = dictionaries[tokens[2]]
-            else:
-                dictionary = {}
-                dictionaries[tokens[2]] = dictionary
-            for i in range(4, len(tokens) - 2, 2 ):
-                value = tokens[i+1]
-                value = value[:-1] if value.endswith(',') else value
-                attribute = ''.join(filter(str.isalpha, tokens[i]))
-                dictionary[attribute] = QuotedStr(value)
-        continue
-
-      # If we're not inside an entity yet, look for an entity header.
-      if not in_entity:
-         header_match = entity_header_pattern.match(stripped)
-         if header_match:
-            current_entity = header_match.group(1)
-            print(f"Processing entity: {current_entity}")
-            in_entity = True
-            # Reset fields and extras for this entity.
-            fields = {}
-            extras = []
-         # Process relationships 
-         elif stripped.find(RELATION_SPEC) > 0:
-            words = stripped.split(RELATION_SPEC)
-            child = words[0].strip()
-            parent = clean(words[1])
-            relationships.append((child, parent))
-            # all_entities[parent].setdefault('children', []).append(child)
-         continue
-
-      # If the line is the closing brace, then end the entity.
-      if stripped == '}':
-         in_entity = False
-         # Store the result in the object.
-         if current_entity:
-            all_entities[current_entity] = {
-               "fields": fields,
-               "extras": extras
-            }
-         current_entity = None
-         in_extras = False
-         continue
-
-      # If we're inside the entity, check if we are still reading field definitions.
-      if not in_extras:
-         # Try to match the field pattern.
-         field_match = field_pattern.match(stripped)
-         if field_match:
-            # It's a field definition.
-            field_type = field_match.group(1)
-            field_name = field_match.group(2)
-            fields[field_name] = field_type
+    for line in lines:
+        line = line.rstrip('\n')
+        stripped = line.strip()
+        if not stripped:
             continue
-         else:
-            # As soon as we encounter a line that does not match a field definition,
-            # we consider that the fields are done and the rest are extras.
-            in_extras = True
-        
-      # If in_extras, add the line (even if it starts with %% or anything else).
-      if in_extras:
-         extras.append(stripped)
-   
-   return all_entities, relationships, dictionaries
 
-def process_extras(obj_dict):
+        # Process dictionary lines
+        if stripped.startswith(DICTIONARY):
+            lexer = shlex.shlex(stripped, posix=True)
+            lexer.whitespace = ' '
+            lexer.whitespace_split = True
+            tokens = list(lexer)
+            if tokens[3] == '{' and tokens[-1] == '}':
+                if tokens[2] in dictionaries:
+                    dictionary = dictionaries[tokens[2]]
+                else:
+                    dictionary = {}
+                    dictionaries[tokens[2]] = dictionary
+                for i in range(4, len(tokens) - 2, 2):
+                    value = tokens[i+1]
+                    value = value[:-1] if value.endswith(',') else value
+                    attribute = ''.join(filter(str.isalpha, tokens[i]))
+                    dictionary[attribute] = QuotedStr(value)
+            continue
 
-   all_services = [] # global list of services
+        # Look for an entity header.
+        if not in_entity:
+            header_match = entity_header_pattern.match(stripped)
+            if header_match:
+                current_entity = header_match.group(1)
+                print(f"Processing entity: {current_entity}")
+                in_entity = True
+                fields = {}
+                extras = []
+            elif stripped.find(RELATION_SPEC) > 0:
+                words = stripped.split(RELATION_SPEC)
+                child = words[0].strip()
+                parent = clean(words[1])
+                relationships.append((child, parent))
+            continue
 
-   for entity, object in obj_dict.items():
-      # process the extras to extract the validation, inheritance and unique data for each entity
-      inherits = []
-      validations = {}
-      uniques = []
+        # End of entity.
+        if stripped == '}':
+            in_entity = False
+            if current_entity:
+                all_entities[current_entity] = {
+                    "fields": fields,
+                    "extras": extras
+                }
+            current_entity = None
+            continue
 
-      for line in object["extras"]:
-        if line.startswith(INHERIT):
-           inherits.append( process_inheritance(line) ) 
-        elif line.startswith(VALIDATE):
-          field, validation = process_validation(line)
-          validations[field] = validation
-        elif line.startswith(UNIQUE):
-           uniques.append( {'fields': process_unique(line) } )
-        # @authenticate is considered a service.  It is inherited by the entity and
-        # added to the list of global services 
-        elif line.startswith(AUTHENTICATE):
-           service = 'services.auth.' + process_authenticate(line)
-           inherits.append( service )
-           if service not in all_services:
-              all_services.append(service)
+        # Process fields or extras
+        if stripped.startswith('%% @'):  
+            extras.append(stripped)
+        else:
+            words = stripped.split()
+            if len(words) >= 2:
+                field_type = words[0]
+                field_name = words[1]
+                fields[field_name] = field_type
 
-      del obj_dict[entity]["extras"]
-      if len(validations) > 0:
-         obj_dict[entity]["validations"] = validations
-      if len(inherits) > 0:
-          obj_dict[entity]["inherits"] = inherits
-      if len(uniques) > 0:
-          obj_dict[entity]["uniques"] = uniques
+                # check for inline validation
+                if len(words) > 6 and f'{words[2]} {words[3]}' == VALIDATE:
+                   # Add validation to extras
+                   extra = f"{VALIDATE} {field_name}: {' '.join(words[4:])}"
+                   extras.append(extra)
+                continue
+    
+    return all_entities, relationships, dictionaries
 
-   return all_services
- 
-      
+def process_extras(obj_dict, dictionaries):
+    all_services = []  # global list of services
 
-def process_validation(line):
-   field_validations = {}
-   lexer = shlex.shlex(line, posix=True)
-   lexer.whitespace = ' '
-   lexer.whitespace_split = True
-   tokens = list(lexer)
-   if tokens[3] == '{' and tokens[-1] == '}':
-      field = clean(tokens[2])
-               
-   # Get validations from the token list
-      i = 4
-      while(i > 0 and tokens[i] != '}'):
-         key, value, i = get_validation(i, tokens)
-         if i > 0:
-            field_validations[key] = value
-   return field, field_validations
+    for entity, obj in obj_dict.items():
+        inherits = []
+        validations = {}
+        uniques = []
+        services = []
 
+        for line in obj.get("extras", []):
+            line = line.strip()
+            if line.startswith(INHERIT):
+                inherits.append(process_inheritance(line))
+            elif line.startswith(VALIDATE):
+                field, validation = process_validation(line, dictionaries)
+                validations[field] = validation
+            elif line.startswith(UNIQUE):
+                uniques.append({'fields': process_unique(line)})
+            elif line.startswith(SERVICE):
+                service = process_service(line)
+                services.append(service)
+                if service not in all_services:
+                    all_services.append(service)
+
+        if "extras" in obj:
+            del obj["extras"]
+
+        if validations:
+            obj["validations"] = validations
+
+        # Add services into inheritance as a mapping.
+        if services:
+            inherits.append({"service": services})
+        if inherits:
+            obj["inherits"] = inherits
+
+    return all_services
+
+def process_validation(line, dictionaries):
+    field_validations = {}
+    lexer = shlex.shlex(line, posix=True)
+    lexer.whitespace = ' '
+    lexer.whitespace_split = True
+    tokens = list(lexer)
+    if tokens[3] == '{' and tokens[-1] == '}':
+        field = clean(tokens[2])
+        i = 4
+        while i < len(tokens) and tokens[i] != '}':
+            key, value, i = get_validation(i, tokens)
+            if i > 0:
+                # Check if value is a dictionary key
+                if value.startswith("dictionary="):
+                    words = value[len("dictionary="):].split('.')
+                  #   value = dictionaries.get(words[0], {}).get(words[1], value)
+                    if words[1] in dictionaries[words[0]]:
+                        value = dictionaries[words[0]][words[1]]
+                    else:
+                        print(f"Error: dictionary key '{value}' not found.")
+                field_validations[key] = value
+    return field, field_validations
 
 def get_validation(i, tokens):
-   attribute = clean(tokens[i])
-   if attribute != 'enum':
-      value = clean(tokens[i+1])
-      return attribute, value, i + 2
-   else:
-      start = i + 1
-      i = start
-      words = []
-      while i < len(tokens) and tokens[i] != '}':
-         word = clean(tokens[i])
-         words.append(word[1:] if word.startswith("[") else word[:-1] if word.endswith("]") else word)
-         if tokens[i].endswith(']') or tokens[i].endswith("],"):
-            value = repr(words)
-            return attribute, value, i + 1
-         else:
-            i += 1
-      return '', '', -1
+    attribute = clean(tokens[i])
+    if attribute != 'enum':
+        value = clean(tokens[i+1])
+        return attribute, value, i + 2
+    else:
+        start = i + 1
+        i = start
+        words = []
+        while i < len(tokens) and tokens[i] != '}':
+            word = clean(tokens[i])
+            words.append(word[1:] if word.startswith("[") else word[:-1] if word.endswith("]") else word)
+            if tokens[i].endswith(']') or tokens[i].endswith("],"):
+                value = repr(words)
+                return attribute, value, i + 1
+            else:
+                i += 1
+        return '', '', -1
 
-# Handle '%% @inherit BaseEntity'
 def process_inheritance(line):
-   line = line[len(INHERIT):]
-   return line.strip()
+    return line[len(INHERIT):].strip()
 
-# Handle '%% @unique email', or '%% @unique email, phone'
 def process_unique(line):
-   line = line[len(UNIQUE):]
-   return split_strip(line, '+')
+    line = line[len(UNIQUE):]
+    return split_strip(line, ',')
 
-# Handle '%% @unique email', or '%% @unique email, phone'
-def process_authenticate(line):
-   words = line[len(AUTHENTICATE):].strip().split(' ')
-   return words[0]
+def process_service(line):
+    words = line[len(SERVICE):].strip().split(' ')
+    return words[0]
 
 def split_strip(line, sep=','):
-   return [word.strip() for word in line.split(sep) if word.strip()]
-
-
-import ast
-import yaml
+    return [word.strip() for word in line.split(sep) if word.strip()]
 
 def convert_validation_value(key, value):
-    """
-    Convert a validation value from a string to an appropriate type.
-    
-    - For boolean keys ("required", "autoGenerate", "autoUpdate"), convert "true"/"false" to booleans.
-    - For numeric keys ("minLength", "maxLength"), attempt to convert to an integer.
-    - For "enum", if the value is a string that looks like a list (i.e. starts with '[' and ends with ']'),
-      use ast.literal_eval to convert it to a list of strings.
-    - Otherwise, return the value unchanged.
-    """
     bool_keys = {"required", "autoGenerate", "autoUpdate"}
     numeric_keys = {"minLength", "maxLength", "min", "max", "lt", "gt", "lte", "gte"}
     
@@ -259,31 +239,6 @@ def convert_validation_value(key, value):
         return value
 
 def generate_schema_yaml(entities, relationships, dictionaries, services, filename):
-    """
-    Generates YAML output from the given entities dictionary and relationships list,
-    and writes the YAML to the specified filename.
-    
-    Arguments:
-      entities: a dictionary produced by your parser. Each key is an entity name, and its value is a dictionary
-                with at least:
-                   - "fields": a dictionary mapping field names to field types.
-                   - "validations": a dictionary mapping field names to validation rules.
-                   - Optionally, "inherits": a list of parent entity names.
-      relationships: a list of tuples (child, parent) representing relationships.
-                     (For example: [('Account', 'User'), ('User', 'Profile'), ('Profile', 'TagAffinity'),
-                                    ('UserEvent', 'User'), ('UserEvent', 'Event'), ('Url', 'Crawl')])
-      filename: the output filename for the YAML.
-    
-    This function:
-      1. Merges validations into each field's definition (under "fields")—converting booleans and numeric values as needed.
-      2. Removes the separate "validations" section.
-      3. Populates each entity’s "relations" array using the provided relationships.
-      4. Builds a top-level _relationships list.
-      5. Writes the final output object as YAML.
-    """
-    # get list of all inherits which includes explict and services (e.g. - auth)
-    inherits = set()
-
     # Merge validations into fields.
     for entity_name, entity_data in entities.items():
         fields = entity_data.get("fields", {})
@@ -295,77 +250,45 @@ def generate_schema_yaml(entities, relationships, dictionaries, services, filena
                     merged[key] = convert_validation_value(key, val)
             fields[field_name] = merged
 
-        # Done with validations, so remove them.
         if "validations" in entity_data:
             del entity_data["validations"]
          
-         # get full list of inherits
-        if "inherits" in entity_data:
-           inherits.update(entity_data["inherits"])
-
-      #   if "relations" not in entity_data:
+        # Ensure relationships is always initialized.
         entity_data["relationships"] = []
     
-    # Process relationships: build top-level _relationships and update each entity's "relations".
+    # Process relationships.
     top_relationships = []
     for child, parent in relationships:
         top_relationships.append({"source": child, "target": parent})
         if child in entities:
-            # if "relations" not in entities[child]:
-               #  entities[child]["relations"] = []
             if parent not in entities[child]["relationships"]:
                 entities[child]["relationships"].append(parent)
     
+    output_obj = {
+        "_relationships": top_relationships,
+        "_dictionaries": dictionaries,
+        "_services": services,
+        "_entities": entities
+    }
 
-   #  entity_output = {}
-
-   #  for entity_name, entity_data in entities.items():
-   #      # output Inheritance
-   #      if "inherits" in entity_data and not isinstance(entity_data["inherits"], list):
-   #          entity_data["inherits"] = [entity_data["inherits"]]
-    
-   #      entity_output[entity_name] = entity_data
-    
-    # Construct final output object.
-    output_obj = {"_relationships": top_relationships, "_dictionaries": dictionaries, 
-                  "_services": services, "_entities": entities, "_inherited_entities": list(inherits)}  
-
-    with open(filename, "w") as f:
-        yaml.dump(output_obj, f, sort_keys=False)
+    with open(str(filename), "w") as f:
+        yaml.dump(output_obj, f, sort_keys=False, default_flow_style=False)
 
     print(f"Schema written to {filename}")
 
 def convert_schema(schema_path, output_dir):
-   """
-   Convert a schema file to YAML format.
-    
-   Arguments:
-      schema_path: the path to the input schema file.
-      output_dir: the directory where the output YAML file will be saved.
-   """
-   yaml.add_representer(QuotedStr, quoted_str_representer)  ## customer yaml outputter
-
-   lines = helpers.read_file_to_array(schema_path)
-   obj_dict, relationships, dictionaries = parse(lines)
-   services = process_extras(obj_dict)
-   generate_schema_yaml(obj_dict, relationships, dictionaries, services, output_dir)
+    yaml.add_representer(QuotedStr, quoted_str_representer)
+    lines = helpers.read_file_to_array(schema_path)
+    obj_dict, relationships, dictionaries = parse(lines)
+    services = process_extras(obj_dict, dictionaries)
+    generate_schema_yaml(obj_dict, relationships, dictionaries, services, output_dir)
 
 if __name__ == "__main__":
-   if len(sys.argv) == 3:
-      infile = sys.argv[1]
-      outfile = Path(sys.argv[2], "schema.yaml")
-   else:
-      print(f"Usage: python {sys.argv[0]} <schema.mmd> <output_dir>")
-      sys.exit(1)
+    if len(sys.argv) == 3:
+        infile = sys.argv[1]
+        outfile = Path(sys.argv[2], "schema.yaml")
+    else:
+        print(f"Usage: python {sys.argv[0]} <schema.mmd> <output_dir>")
+        sys.exit(1)
 
-   convert_schema(infile, outfile)
-
-   # lines = helpers.read_file_to_array(infile)
-    
-   # yaml.add_representer(QuotedStr, quoted_str_representer)  ## customer yaml outputter
-
-   # obj_dict, relationships, dictionaries = parse(lines)
-
-   # process_extras(obj_dict)
-
-   # generate_schema_yaml(obj_dict, relationships, dictionaries, outfile)
+    convert_schema(infile, outfile)
