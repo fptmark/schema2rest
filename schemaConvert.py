@@ -5,6 +5,7 @@ import sys
 import helpers
 import ast
 import yaml
+from typing import Any
 
 DICTIONARY = "%% @dictionary"
 UNIQUE = "%% @unique"
@@ -20,15 +21,6 @@ def quoted_str_representer(dumper, data):
     return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='"')
 
 yaml.add_representer(QuotedStr, quoted_str_representer)
-
-def clean(string):
-    s = string.strip()
-    position = s.find(':')
-    if position > 0:
-        return s[:position]
-    elif s.endswith(','):
-        return s[:-1]
-    return s
 
 def parse(lines):
     all_entities = {}
@@ -84,7 +76,7 @@ def parse(lines):
             elif stripped.find(RELATION_SPEC) > 0:
                 words = stripped.split(RELATION_SPEC)
                 child = words[0].strip()
-                parent = clean(words[1])
+                parent = helpers.clean(words[1])
                 relationships.append((child, parent))
             continue
 
@@ -118,8 +110,8 @@ def parse(lines):
     
     return all_entities, relationships, dictionaries
 
-def process_entity_decorations(obj_dict, dictionaries) -> tuple[set, set]:
-    all_services = set()  # global list of services
+def process_entity_decorations(obj_dict, dictionaries) -> tuple[dict[str, Any], set]:
+    all_services = {}  # global list of services
     all_inherits = set()  # global list of inherited entities
 
     for entity, obj in obj_dict.items():
@@ -140,9 +132,9 @@ def process_entity_decorations(obj_dict, dictionaries) -> tuple[set, set]:
             elif line.startswith(UNIQUE):
                 uniques.append({'fields': process_unique(line)})
             elif line.startswith(SERVICE):
-                service = process_service(line)
+                service, params = process_service(line)
                 services.append(service)
-                all_services.add(service)
+                all_services[service] = params
 
         if "decorations" in obj:
             del obj["decorations"]
@@ -165,7 +157,7 @@ def process_validation(line, dictionaries):
     lexer.whitespace_split = True
     tokens = list(lexer)
     if tokens[3] == '{' and tokens[-1] == '}':
-        field = clean(tokens[2])
+        field = helpers.clean(tokens[2])
         i = 4
         while i < len(tokens) and tokens[i] != '}':
             key, value, i = get_validation(i, tokens)
@@ -182,16 +174,16 @@ def process_validation(line, dictionaries):
     return field, field_validations
 
 def get_validation(i, tokens):
-    attribute = clean(tokens[i])
+    attribute = helpers.clean(tokens[i])
     if attribute != 'enum':
-        value = clean(tokens[i+1])
+        value = helpers.clean(tokens[i+1])
         return attribute, value, i + 2
     else:
         start = i + 1
         i = start
         words = []
         while i < len(tokens) and tokens[i] != '}':
-            word = clean(tokens[i])
+            word = helpers.clean(tokens[i])
             words.append(word[1:] if word.startswith("[") else word[:-1] if word.endswith("]") else word)
             if tokens[i].endswith(']') or tokens[i].endswith("],"):
                 value = repr(words)
@@ -205,14 +197,12 @@ def process_inheritance(line):
 
 def process_unique(line):
     line = line[len(UNIQUE):]
-    return split_strip(line, ',')
+    return helpers.split_strip(line, ',')
 
-def process_service(line):
+def process_service(line) -> tuple[str, dict]:
     words = line[len(SERVICE):].strip().split(' ')
-    return words[0]
-
-def split_strip(line, sep=','):
-    return [word.strip() for word in line.split(sep) if word.strip()]
+    obj = helpers.process_object_line(words[1:])
+    return words[0], obj
 
 def convert_validation_value(key, value):
     bool_keys = {"required", "autoGenerate", "autoUpdate"}
@@ -284,7 +274,7 @@ def convert_schema(schema_path, output_dir):
     lines = helpers.read_file_to_array(schema_path)
     obj_dict, relationships, dictionaries = parse(lines)
     services, inherits = process_entity_decorations(obj_dict, dictionaries)
-    generate_schema_yaml(obj_dict, relationships, dictionaries, list(services), list(inherits), output_dir)
+    generate_schema_yaml(obj_dict, relationships, dictionaries, services, list(inherits), output_dir)
 
 if __name__ == "__main__":
     if len(sys.argv) == 3:

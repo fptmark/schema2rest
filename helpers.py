@@ -2,6 +2,8 @@ from pathlib import Path
 from typing import Type
 from pymongo.errors import DuplicateKeyError
 import yaml
+from itertools import takewhile
+
 
 def generate_file(path_root: str, file_name: Path, lines)-> Path:
     outfile = Path(path_root) / file_name
@@ -50,4 +52,29 @@ def pluralize(name) -> str:
     return name + "s"  # Default: just add "s"
 #
 
+def clean(string):
+    s = string.strip()
+    position = s.find(':')
+    if position > 0:
+        return s[:position]
+    elif s.endswith(','):
+        return s[:-1]
+    return s
 
+def process_object_line(words):
+    obj = {}
+    i = 0
+    words = get_until_hash(words)
+    if len(words) >= 4 and words[0] == '{' and words[-1] == '}':
+        for i in range(1, len(words)-1, 2):
+            key = clean(words[i])
+            value = clean(words[i+1])
+            value = value[:-1] if value.endswith(',') else value
+            obj[key] = value
+    return obj
+
+def get_until_hash(strings: list[str]) -> list[str]:
+    return list(takewhile(lambda s: not s.startswith('#'), strings))
+
+def split_strip(line, sep=','):
+    return [word.strip() for word in line.split(sep) if word.strip()]
