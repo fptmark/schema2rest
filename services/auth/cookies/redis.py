@@ -1,86 +1,116 @@
-# app/services/auth/cookies.py
+# app/services/auth/cookies/redis.py
+from typing import Optional
 import uuid
 import json
 import time
-import redis
+import redis.asyncio as redis
 from fastapi import Request
-from .base import BaseAuth, BaseCookieStore
+from ..base import BaseAuth, BaseCookieStore
 
 # Configuration constants – these could be loaded from config.json later.
 SESSION_TTL = 3600              # 1 hour in seconds
 NEAR_EXPIRY_THRESHOLD = 300     # 5 minutes threshold
 
-# --- Concrete Cookie Store Implementation Using Redis ---
+# --- Concrete Cookie Store Implementation Using Async Redis ---
 class RedisCookieStore(BaseCookieStore):
-    def __init__(self, host: str = '127.0.0.1', port: int = 6379, db: int = 0):
-        self.redis_client = redis.Redis(host=host, port=port, db=db, decode_responses=True)
+    def __init__(self, host: str = "127.0.0.1", port: int = 6379, db: int = 0):
+        self.host = host
+        self.port = port
+        self.db = db
+        self.redis_client = None
 
-    def set_session(self, session_id: str, session_data: dict, ttl: int) -> None:
-        self.redis_client.setex(session_id, ttl, json.dumps(session_data))
+    async def connect(self):
+        self.redis_client = redis.Redis(
+            host=self.host,
+            port=self.port,
+            db=self.db,
+            encoding="utf-8",
+            decode_responses=True
+        )
 
-    def get_session(self, session_id: str) -> dict:
-        session_json = self.redis_client.get(session_id)
-        if session_json:
+    async def set_session(self, session_id: str, session_data: dict, ttl: int) -> None:
+        if self.redis_client is None:
+            raise RuntimeError("Redis client not connected")
+        await self.redis_client.setex(session_id, ttl, json.dumps(session_data))
+
+    async def get_session(self, session_id: str) -> dict:
+        if self.redis_client is None:
+            raise RuntimeError("Redis client not connected")
+        session_json = await self.redis_client.get(session_id)
+        if session_json is None:
+            return {}
+        try:
             return json.loads(session_json)
-        return None
+        except Exception:
+            return {}
 
-    def delete_session(self, session_id: str) -> None:
-        self.redis_client.delete(session_id)
+    async def delete_session(self, session_id: str) -> None:
+        if self.redis_client is None:
+            raise RuntimeError("Redis client not connected")
+        await self.redis_client.delete(session_id)
 
-    def renew_session(self, session_id: str, session_data: dict, ttl: int) -> dict:
-        self.redis_client.setex(session_id, ttl, json.dumps(session_data))
+    async def renew_session(self, session_id: str, session_data: dict, ttl: int) -> dict:
+        if self.redis_client is None:
+            raise RuntimeError("Redis client not connected")
+        await self.redis_client.setex(session_id, ttl, json.dumps(session_data))
         return session_data
 
-# --- Concrete CookieAuth Implementation ---
+# --- Concrete CookiesAuth Implementation Using Async Redis ---
 class CookiesAuth(BaseAuth):
-    # Default cookie configuration; these could be overridden by your load_config
+    # Default cookie configuration; can be overridden via config.
     cookie_name = "sessionId"
     cookie_options = {
         "httponly": True,
-        "secure": True,    # For local development, you might set this to False if not using HTTPS
+        "secure": True,    # For local development, you might set this to False if not using HTTPS.
         "samesite": "lax"
     }
+    # The backing store will be set via the asynchronous initialize() class method.
+    cookie_store: Optional[RedisCookieStore] = None
 
-    def __init__(self, cookie_store: BaseCookieStore):
-        self.cookie_store = cookie_store
+    @classmethod
+    async def initialize(cls, config: dict):
+        """
+        Initialize the auth service using settings from config.
+        Expected config keys: host, port, db (for Redis), etc.
+        """
+        store = RedisCookieStore(
+            host=config.get("host", "127.0.0.1"),
+            port=config.get("port", 6379),
+            db=config.get("db", 0)
+        )
+        await store.connect()
+        cls.cookie_store = store
+        return cls
 
-    def authenticate(self, request: Request) -> bool:
-        """
-        Returns True if a valid session exists for the token found in the cookie.
-        """
+    async def authenticate(self, request: Request) -> bool:
         token = request.cookies.get(self.cookie_name)
-        if not token:
+        if not token or self.cookie_store is None:
             return False
-        session = self.cookie_store.get_session(token)
+        session = await self.cookie_store.get_session(token)
         return bool(session)
 
-    def login(self, credentials: dict) -> bool:
-        """
-        For now, simply validates the credentials and, if correct,
-        creates a new session in the backing store.
-        """
-        # Placeholder: In production, replace with proper credential validation.
-        if credentials.get("username") == "user" and credentials.get("password") == "pass":
+    async def login(self, credentials: dict) -> bool:
+        # Placeholder: replace with proper credential validation in production.
+        if credentials.get("username") == "user" and credentials.get("password") == "pass" and self.cookie_store:
             session_id = str(uuid.uuid4())
             session_data = {
                 "user_id": credentials.get("username"),
                 "created": time.time()
             }
-            self.cookie_store.set_session(session_id, session_data, SESSION_TTL)
-            # In a full implementation, you'd return the session details (e.g., the session_id)
+            await self.cookie_store.set_session(session_id, session_data, SESSION_TTL)
             return True
         return False
 
-    def logout(self, request: Request) -> None:
+    async def logout(self, request: Request) -> None:
         token = request.cookies.get(self.cookie_name)
-        if token:
-            self.cookie_store.delete_session(token)
+        if token and self.cookie_store:
+            await self.cookie_store.delete_session(token)
 
-    def refresh(self, request: Request) -> bool:
+    async def refresh(self, request: Request) -> bool:
         token = request.cookies.get(self.cookie_name)
-        if token:
-            session = self.cookie_store.get_session(token)
+        if token and self.cookie_store:
+            session = await self.cookie_store.get_session(token)
             if session:
-                self.cookie_store.renew_session(token, session, SESSION_TTL)
+                await self.cookie_store.renew_session(token, session, SESSION_TTL)
                 return True
         return False
