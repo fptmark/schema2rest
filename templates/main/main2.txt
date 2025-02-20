@@ -6,4 +6,3 @@ async def startup_event():
     logger.info(f"Running in {'development' if config.get('environment', 'production') == 'development' else 'production'} mode")
     await Database.init(config['mongo_uri'], config['db_name']) 
 
-# Include routers

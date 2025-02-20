@@ -12,11 +12,20 @@ RESERVED_TYPES = {"ISODate", "ObjectId"}  # Reserved types to skip
 TEMPLATE = str(script_dir / "templates" / "main" / "main")
 
 def generate_main(schema_path, path_root):
+    lines: list[str] = []
 
     schema = Schema(schema_path)
 
+    # add imports for all services
+    services = schema.services()
+    for service in services:
+        words = service.split('.')
+        alias = words[0].capitalize()
+        imported = words[1].capitalize() + alias
+        lines.append(f"from app.services.{service} import {imported} as {alias}\n")
+
     # Start building the main.py content
-    lines = helpers.read_file_to_array(TEMPLATE, 1)
+    lines.extend(helpers.read_file_to_array(TEMPLATE, 1))
 
     # Import routes dynamically for valid entities
     for entity, _ in schema.concrete_entities().items():
@@ -26,7 +35,17 @@ def generate_main(schema_path, path_root):
     # Initialize FastAPI app
     lines.extend( helpers.read_file_to_array(TEMPLATE, 2))
 
+    # Add service initializers
+    lines.append("# Add service initializers\n")
+    for service in schema.services():
+        words = service.split('.')
+        alias = words[0].capitalize()
+        lines.append(f"    print(f'>>> Initializing service {service}')\n")
+        lines.append(f"    await {alias}.initialize(config[\'{service}\'])\n")
+    lines.append("\n")
+
     # Register routes dynamically
+    lines.append("# Register routes\n")
     for entity, _ in schema.concrete_entities().items():
         entity_lower = entity.lower()
         lines.append(f"app.include_router({entity_lower}_router, prefix='/{entity_lower}', tags=['{entity}'])\n")
