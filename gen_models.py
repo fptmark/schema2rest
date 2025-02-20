@@ -12,6 +12,7 @@ DICTIONARY_KEY = "dictionary="
 def model_field_filter(field_data: dict) -> str:
     """
     Convert a dict of validations into a Python type annotation for Pydantic.
+    It now checks for autoGenerate/autoUpdate flags to produce a default_factory.
     """
     type_map = {
         'String': 'str',
@@ -25,35 +26,42 @@ def model_field_filter(field_data: dict) -> str:
     field_type = field_data.get('type', 'String')
     py_type = type_map.get(field_type, 'str')
 
-    required_val = field_data.get('required', False)
-    if isinstance(required_val, str):
-        required_val = (required_val.lower() == 'true')
-
-    if required_val:
-        base_type = py_type
-        default_str = "Field(..."
+    # Check for autoGenerate or autoUpdate flags.
+    if field_data.get('autoGenerate', False) or field_data.get('autoUpdate', False):
+        # For ISODate, we'll use datetime.utcnow as the default factory.
+        # You could add additional logic here for other types.
+        default_str = "Field(default_factory=datetime.utcnow)"
+        base_type = py_type  # Even if required is true, we supply a default.
     else:
-        base_type = f"Optional[{py_type}]"
-        default_str = "Field(None"
-
-    field_params = []
-    if 'minLength' in field_data and 'minLength.message' not in field_data:
-        field_params.append(f"min_length={field_data['minLength']}")
-    if 'maxLength' in field_data and 'maxLength.message' not in field_data:
-        field_params.append(f"max_length={field_data['maxLength']}")
-    if 'pattern' in field_data and 'pattern.message' not in field_data:
-        field_params.append(f"regex=r'{field_data['pattern']}'")
-    if 'enum' in field_data:
-        field_params.append(f"description=\"Allowed values: {field_data['enum']}\"")
-    if 'min' in field_data:
-        field_params.append(f"ge={field_data['min']}")
-    if 'max' in field_data:
-        field_params.append(f"le={field_data['max']}")
-
-    if field_params:
-        default_str += ", " + ", ".join(field_params)
-    default_str += ")"
-
+        required_val = field_data.get('required', False)
+        if isinstance(required_val, str):
+            required_val = (required_val.lower() == 'true')
+    
+        if required_val:
+            base_type = py_type
+            default_str = "Field(..."
+        else:
+            base_type = f"Optional[{py_type}]"
+            default_str = "Field(None"
+    
+        field_params = []
+        if 'minLength' in field_data and 'minLength.message' not in field_data:
+            field_params.append(f"min_length={field_data['minLength']}")
+        if 'maxLength' in field_data and 'maxLength.message' not in field_data:
+            field_params.append(f"max_length={field_data['maxLength']}")
+        if 'pattern' in field_data and 'pattern.message' not in field_data:
+            field_params.append(f"regex=r'{field_data['pattern']}'")
+        if 'enum' in field_data:
+            field_params.append(f"description=\"Allowed values: {field_data['enum']}\"")
+        if 'min' in field_data:
+            field_params.append(f"ge={field_data['min']}")
+        if 'max' in field_data:
+            field_params.append(f"le={field_data['max']}")
+    
+        if field_params:
+            default_str += ", " + ", ".join(field_params)
+        default_str += ")"
+    
     return f"{base_type} = {default_str}"
 
 def combine_filter(dict1, dict2):
