@@ -7,7 +7,11 @@ from .{{ base|lower() }}_model import {{ base }}
         {% for key, value in base.items() %}
             {% if key == "service" %}
                 {% for service in value %}
-import app.services.{{ service }}
+{% set module_path = "app.services." ~ service %}
+{% set parts = service | split('.') %}
+{% set alias = parts[0] | capitalize %}
+{% set concrete_class = (parts[1] | capitalize) ~ "Auth" %}
+from {{ module_path }} import {{ concrete_class }} as {{ alias }}
                 {% endfor %}
             {% else %}
 # TODO: Import for {{ key }}: {{ value }}
@@ -18,6 +22,7 @@ import app.services.{{ service }}
 {% else %}
 from beanie import Document
 {% endif %}
+
 from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, Field, validator
 from typing import Optional
@@ -32,6 +37,7 @@ class UniqueValidationError(Exception):
     def __str__(self):
         return f"Unique constraint violation for fields {self.fields}: {self.query}"
 
+{# --- The rest of your template remains unchanged --- #}
 
 class {{ entity }}Base(BaseModel):
 {% for field_name, field_info in fields.items() %}
