@@ -13,6 +13,7 @@ redis:
 	brew services start redis
 
 services: $(S2R_DIR)/services/*
+	rm -rf app/services
 	mkdir -p app/services
 	cp -r $(S2R_DIR)/services app
 
@@ -24,7 +25,6 @@ clean:
 	rm -rf app schema.yaml app.log schema.png
 
 code:	schema main db models routes
-	cp -r $(S2R_DIR)/helpers.py app
 	mkdir -p app/utilities
 	cp -r $(S2R_DIR)/config.py app/utilities
 
@@ -52,7 +52,7 @@ schema.yaml : schema.mmd $(GENERATORS)/schemaConvert.py
 	python $(S2R_DIR)/update_indicies.py schema.yaml
 
 schema.png: schema.mmd
-	mmdc -i schema.mmd -o schema.png
+	cat schema.mmd | sed '/[[:alnum:]].*%%/ s/%%.*//' | mmdc -i - -o schema.png
 
 run: app/main.py
 	PYTHONPATH=. python app/main.py

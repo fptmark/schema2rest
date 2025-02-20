@@ -75,6 +75,7 @@ def get_jinja_env() -> Environment:
         extensions=['jinja2.ext.do']
     )
     env.filters['combine'] = combine_filter
+    env.filters['split'] = lambda s, sep=None: s.split(sep)
     return env
 
 ############################
@@ -103,7 +104,11 @@ def generate_models(schema_file: str, path_root: str):
         for base in raw_inherits:
             if isinstance(base, dict) and "service" in base:
                 for s in base["service"]:
-                    processed_bases.append(s)
+                    if isinstance(s, str):  # Service provided as a mapping
+                        alias = s.split('.')[0].capitalize()
+                        processed_bases.append(alias)
+                    else:
+                        processed_bases.append(s)
             elif isinstance(base, str):
                 processed_bases.append(base)
         if not processed_bases:
@@ -125,7 +130,8 @@ def generate_models(schema_file: str, path_root: str):
             fields=fields,
             inherits=processed_bases,  # For class declaration
             raw_inherits=raw_inherits,  # For generating imports
-            uniques=uniques
+            uniques=uniques,
+            services=schema.services()  # Pass the _services mapping from the YAML
         )
         out_filename = f"{entity_name.lower()}_model.py"
         out_path = os.path.join(models_dir, out_filename)

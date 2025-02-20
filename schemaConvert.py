@@ -5,7 +5,7 @@ import sys
 import helpers
 import ast
 import yaml
-from typing import Any
+from typing import Any, Dict, Set
 
 DICTIONARY = "%% @dictionary"
 UNIQUE = "%% @unique"
@@ -110,9 +110,9 @@ def parse(lines):
     
     return all_entities, relationships, dictionaries
 
-def process_entity_decorations(obj_dict, dictionaries) -> tuple[dict[str, Any], set]:
-    all_services = {}  # global list of services
-    all_inherits = set()  # global list of inherited entities
+def process_entity_decorations(obj_dict, dictionaries) -> tuple[set, set]:
+    all_services: Set[str] = set()  # global list of services
+    all_inherits: Set[str] = set()  # global list of inherited entities
 
     for entity, obj in obj_dict.items():
         inherits = []
@@ -132,9 +132,11 @@ def process_entity_decorations(obj_dict, dictionaries) -> tuple[dict[str, Any], 
             elif line.startswith(UNIQUE):
                 uniques.append({'fields': process_unique(line)})
             elif line.startswith(SERVICE):
-                service, params = process_service(line)
-                services.append(service)
-                all_services[service] = params
+                service_name, params = process_service(line)
+                services.append(service_name)
+                all_services.add(service_name)
+                if params:
+                    print(f"*** Waring *** Service {service_name} has parameters: {params}")
 
         if "decorations" in obj:
             del obj["decorations"]
@@ -204,6 +206,7 @@ def process_service(line) -> tuple[str, dict]:
     obj = helpers.process_object_line(words[1:])
     return words[0], obj
 
+
 def convert_validation_value(key, value):
     bool_keys = {"required", "autoGenerate", "autoUpdate"}
     numeric_keys = {"minLength", "maxLength", "min", "max", "lt", "gt", "lte", "gte"}
@@ -259,8 +262,8 @@ def generate_schema_yaml(entities, relationships, dictionaries, services, inheri
     output_obj = {
         "_relationships": top_relationships,
         "_dictionaries": dictionaries,
-        "_services": services,
-        "_inherited_entities": inherits,
+        "_services": list(services),
+        "_inherited_entities": list(inherits),
         "_entities": entities
     }
 
@@ -274,7 +277,7 @@ def convert_schema(schema_path, output_dir):
     lines = helpers.read_file_to_array(schema_path)
     obj_dict, relationships, dictionaries = parse(lines)
     services, inherits = process_entity_decorations(obj_dict, dictionaries)
-    generate_schema_yaml(obj_dict, relationships, dictionaries, services, list(inherits), output_dir)
+    generate_schema_yaml(obj_dict, relationships, dictionaries, services, inherits, output_dir)
 
 if __name__ == "__main__":
     if len(sys.argv) == 3:
