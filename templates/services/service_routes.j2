@@ -1,20 +1,28 @@
 {# templates/services/service_routes.j2 #}
 from fastapi import APIRouter, Request, Response, HTTPException
-from app.services.auth.base import BaseAuth
 
-# Import the service class from the dynamically computed module
+# Dynamically import the service implementation.
 from {{ module_path }} import {{ concrete_class }} as {{ alias }}
 
 router = APIRouter()
 
 {% for ep in endpoints %}
-@router.{{ ep.metadata.method.lower() }}("{{ ep.metadata.path }}", summary="{{ ep.metadata.get('summary', '') }}")
+{% set ep_path = ep.metadata.path if ep.metadata.path else "/" ~ ep.name %}
+{% set ep_summary = ep.metadata.summary if ep.metadata.summary else ep.name.capitalize() %}
+@router.{{ ep.metadata.method.lower() }}("{{ ep_path }}", summary="{{ ep_summary }}")
 async def {{ ep.name }}_endpoint(request: Request, response: Response):
-    # Delegate to the corresponding service method
-    # You might need to adjust parameters based on your method signature.
-    result = await {{ alias }}.{{ ep.name }}(request)
-    return result
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request body")
+    try:
+        result = await {{ alias }}().{{ ep.name }}(payload)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 {% endfor %}
 
-def get_router():
-    return router
+def init_router(app):
+    # Mount the router under /<entity>/<top_service>
+    app.include_router(router, prefix="/{{ entity | lower }}/{{ top_service | lower }}", tags=["{{ entity }}"])
