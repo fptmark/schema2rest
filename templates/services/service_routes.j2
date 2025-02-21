@@ -1,0 +1,20 @@
+{# templates/services/service_routes.j2 #}
+from fastapi import APIRouter, Request, Response, HTTPException
+from app.services.auth.base import BaseAuth
+
+# Import the service class from the dynamically computed module
+from {{ module_path }} import {{ concrete_class }} as {{ alias }}
+
+router = APIRouter()
+
+{% for ep in endpoints %}
+@router.{{ ep.metadata.method.lower() }}("{{ ep.metadata.path }}", summary="{{ ep.metadata.get('summary', '') }}")
+async def {{ ep.name }}_endpoint(request: Request, response: Response):
+    # Delegate to the corresponding service method
+    # You might need to adjust parameters based on your method signature.
+    result = await {{ alias }}.{{ ep.name }}(request)
+    return result
+{% endfor %}
+
+def get_router():
+    return router

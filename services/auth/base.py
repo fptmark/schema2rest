@@ -2,6 +2,13 @@
 from abc import ABC, abstractmethod
 from fastapi import Request
 
+def expose_endpoint(method: str, route: str):
+    def decorator(func):
+        # Attach metadata to the function
+        func._expose_endpoint = {"method": method, "route": route}
+        return func
+    return decorator
+
 class BaseAuth(ABC):
     @abstractmethod
     async def authenticate(self, request: Request) -> bool:
@@ -10,6 +17,7 @@ class BaseAuth(ABC):
         """
         pass
 
+    @expose_endpoint("POST", "/login")
     @abstractmethod
     async def login(self, credentials: dict) -> bool:
         """
@@ -18,6 +26,7 @@ class BaseAuth(ABC):
         """
         pass
 
+    @expose_endpoint("POST", "/logout")
     @abstractmethod
     async def logout(self, request: Request) -> None:
         """
@@ -25,6 +34,7 @@ class BaseAuth(ABC):
         """
         pass
 
+    @expose_endpoint("POST", "/refresh")
     @abstractmethod
     async def refresh(self, request: Request) -> bool:
         """
