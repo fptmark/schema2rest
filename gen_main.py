@@ -27,10 +27,24 @@ def generate_main(schema_path, path_root):
     # Start building the main.py content
     lines.extend(helpers.read_file_to_array(TEMPLATE, 1))
 
-    # Import routes dynamically for valid entities
-    for entity, _ in schema.concrete_entities().items():
-        entity_lower = entity.lower()
+    # Import routes dynamically for valid entities and determine the list of services for each entity
+    services = {}
+    for entity_name, details in schema.concrete_entities().items():
+        entity_lower = entity_name.lower()
         lines.append(f"from app.routes.{entity_lower}_router import router as {entity_lower}_router\n")
+        for inherits in details.get("inherits", []):
+            if isinstance(inherits, dict) and "service" in inherits:
+                for service_instance in inherits["service"]:
+                    words = service_instance.split('.')
+                    services.setdefault(entity_name, []).append(words[0])
+
+    # Add routing for each entity-service pair
+    lines.extend("\n#Add routing for each entity-service pair\n")
+    for entity_name in services.keys():
+        for service in services[entity_name]:
+            entity_lower = entity_name.lower()
+            entity_service = f"{entity_lower}_{service}"
+            lines.append(f"from routes.services.{service}.{entity_service}_routes import router as {entity_service}_router\n")
 
     # Initialize FastAPI app
     lines.extend( helpers.read_file_to_array(TEMPLATE, 2))
@@ -46,9 +60,15 @@ def generate_main(schema_path, path_root):
 
     # Register routes dynamically
     lines.append("# Register routes\n")
-    for entity, _ in schema.concrete_entities().items():
-        entity_lower = entity.lower()
-        lines.append(f"app.include_router({entity_lower}_router, prefix='/{entity_lower}', tags=['{entity}'])\n")
+    for entity_name, details in schema.concrete_entities().items():
+        entity_lower = entity_name.lower()
+        lines.append(f"app.include_router({entity_lower}_router, prefix='/{entity_lower}', tags=['{entity_name}'])\n")
+        # Add routing for each entity-service pair
+        for inherits in details.get("inherits", []):
+            if isinstance(inherits, dict) and "service" in inherits:
+                for service_instance in inherits["service"]:
+                    words = service_instance.split('.')
+                    lines.append(f"app.include_router({entity_lower}_{words[0]}_router, prefix='/{entity_lower}/{words[0]}', tags=['{entity_name}'])\n")
 
     # Add root endpoint
     lines.extend( helpers.read_file_to_array(TEMPLATE, 3))
