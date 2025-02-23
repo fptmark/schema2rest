@@ -5,7 +5,7 @@ import json
 import time
 import redis.asyncio as redis
 from fastapi import Request
-from ..base import BaseAuth, BaseCookieStore
+from ..base_router import BaseAuth, BaseCookieStore
 
 # Configuration constants – these could be loaded from config.json later.
 SESSION_TTL = 3600              # 1 hour in seconds

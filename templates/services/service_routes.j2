@@ -1,15 +1,23 @@
 {# templates/services/service_routes.j2 #}
 from fastapi import APIRouter, Request, Response, HTTPException
 
-# Dynamically import the service implementation.
+# Dynamically import the concrete service implementation.
 from {{ module_path }} import {{ concrete_class }} as {{ alias }}
+
+# Dynamically import all response models from the base_model.
+from {{ base_model_module }} import *
 
 router = APIRouter()
 
 {% for ep in endpoints %}
-{% set ep_path = ep.metadata.path if ep.metadata.path else "/" ~ ep.name %}
-{% set ep_summary = ep.metadata.summary if ep.metadata.summary else ep.name.capitalize() %}
+    {% set ep_path = ep.metadata.route if ep.metadata.route != "" else "/" ~ ep.name.lower() %}
+    {% set ep_summary = ep.metadata.summary if ep.metadata.summary != "" else ep.name.capitalize() %}
+    {# If a response_model is specified in metadata, use it; otherwise omit the parameter #}
+    {% if ep.metadata.response_model != "" %}
+@router.{{ ep.metadata.method.lower() }}("{{ ep_path }}", summary="{{ ep_summary }}", response_model={{ ep.metadata.response_model }})
+    {% else %}
 @router.{{ ep.metadata.method.lower() }}("{{ ep_path }}", summary="{{ ep_summary }}")
+    {% endif %}
 async def {{ ep.name }}_endpoint(request: Request, response: Response):
     try:
         payload = await request.json()
@@ -24,5 +32,4 @@ async def {{ ep.name }}_endpoint(request: Request, response: Response):
 {% endfor %}
 
 def init_router(app):
-    # Mount the router under /<entity>/<top_service>
     app.include_router(router, prefix="/{{ entity | lower }}/{{ top_service | lower }}", tags=["{{ entity }}"])
