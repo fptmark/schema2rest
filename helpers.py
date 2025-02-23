@@ -1,7 +1,4 @@
 from pathlib import Path
-from typing import Type
-from pymongo.errors import DuplicateKeyError
-import yaml
 from itertools import takewhile
 
 

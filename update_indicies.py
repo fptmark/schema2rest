@@ -1,10 +1,8 @@
-from pathlib import Path
 import sys
 import config
 import pymongo
 from pymongo.errors import DuplicateKeyError
-import helpers
-import yaml
+import schema
 
 def run(schema):
 
@@ -15,10 +13,7 @@ def run(schema):
     db = client[db_name]
 
     # 2) Iterate over each entity (collection) in the schema
-    for entity, data in schema.items():
-        if entity.startswith("_"):
-            # Skip hidden/system collections
-            continue
+    for entity, data in schema.concrete_entities().items():
 
         collection = db[entity]
         print(f"Processing collection: {entity}")
@@ -93,5 +88,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python update_indexes.py <schema_path>")
         sys.exit(1)
-    schema = helpers.get_schema(sys.argv[1])
-    run(schema)
+    my_schema = schema.Schema(sys.argv[1])
+    run(my_schema)
