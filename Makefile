@@ -12,7 +12,7 @@ redis:
 	brew install redis
 	brew services start redis
 
-services: $(S2R_DIR)/services/*
+services: $(S2R_DIR)/services/* schema.yaml
 	rm -rf app/services
 	mkdir -p app/services
 	cp -r $(S2R_DIR)/services app
