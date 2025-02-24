@@ -16,6 +16,7 @@ services: $(S2R_DIR)/services/*
 	rm -rf app/services
 	mkdir -p app/services
 	cp -r $(S2R_DIR)/services app
+	python $(GENERATORS)/gen_service_routes.py schema.yaml .
 
 all: schema code run 
 
@@ -24,7 +25,7 @@ schema: schema.yaml schema.png
 clean: 
 	rm -rf app schema.yaml app.log schema.png
 
-code:	schema main db models routes
+code:	schema main db models routes services
 	mkdir -p app/utilities
 	cp -r $(S2R_DIR)/config.py app/utilities
 

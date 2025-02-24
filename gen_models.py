@@ -124,6 +124,10 @@ def generate_models(schema_file: str, path_root: str):
 
         fields = entity_def.get("fields", {})
 
+        # Examine relationships for this entity to find foreign key and auto add it's id to fields
+        for parent in get_parents(entity_name, schema):
+            fields[f"{parent.lower()}Id"] = { "type": "ObjectId", "required": True }
+
         # Process dictionary lookups.
         for field, attributes in fields.items():
             for attribute, value in attributes.items():
@@ -146,6 +150,13 @@ def generate_models(schema_file: str, path_root: str):
         with open(out_path, "w") as f:
             f.write(rendered_model)
 
+def get_parents(child_name, schema):
+    parents = []
+    for entity_name, entity_def in schema.concrete_entities().items():
+        for relation in entity_def.get("relationships", []):
+            if child_name == relation:
+                parents.append(entity_name)
+    return parents
 
 def get_dictionary_value(dictionaries, value):
     words = value.split('.')
