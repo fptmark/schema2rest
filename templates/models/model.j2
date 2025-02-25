@@ -98,19 +98,18 @@ class {{ entity }}({{ inherits|join(', ') }}, {{ entity }}Base):
     class Settings:
         name = "{{ entity|lower() }}"
 
-    {% if uniques %}
-    {% for unique in uniques %}
+{% if uniques %}
     async def validate_uniques(self):
-        # Unique constraint on fields: {{ unique.fields|join(', ') }}
-        query = {
-        {% for field in unique.fields %}
+        {% for unique in uniques %}
+        query_{{ loop.index }} = {
+            {% for field in unique %}
             "{{ field }}": self.{{ field }},
-        {% endfor %}
+            {% endfor %}
         }
-        existing = await self.__class__.find_one(query)
-        if existing:
-            raise UniqueValidationError({{ unique.fields|tojson }}, query)
-    {% endfor %}
+        existing_{{ loop.index }} = await self.__class__.find_one(query_{{ loop.index }})
+        if existing_{{ loop.index }}:
+            raise UniqueValidationError({{ unique|tojson }}, query_{{ loop.index }})
+        {% endfor %}
 
     async def save(self, *args, **kwargs):
         await self.validate_uniques()

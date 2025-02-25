@@ -130,7 +130,7 @@ def process_entity_decorations(obj_dict, dictionaries) -> tuple[set, set]:
                 field, validation = process_validation(line, dictionaries)
                 validations[field] = validation
             elif line.startswith(UNIQUE):
-                uniques.append({'fields': process_unique(line)})
+                uniques.append(process_unique(line))
             elif line.startswith(SERVICE):
                 service_name, params = process_service(line)
                 services.append(service_name)
@@ -149,6 +149,8 @@ def process_entity_decorations(obj_dict, dictionaries) -> tuple[set, set]:
             inherits.append({"service": services})
         if inherits:
             obj["inherits"] = inherits
+        if uniques:
+            obj["uniques"] = uniques
 
     return all_services, all_inherits
 
@@ -199,7 +201,8 @@ def process_inheritance(line):
 
 def process_unique(line):
     line = line[len(UNIQUE):]
-    return helpers.split_strip(line, ',')
+    words = line.split('+')
+    return [word.strip() for word in words]   
 
 def process_service(line) -> tuple[str, dict]:
     words = line[len(SERVICE):].strip().split(' ')
