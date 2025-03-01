@@ -25,7 +25,7 @@
 {% endmacro %}
 
 {# Macro for generating the save method #}
-{% macro save_method(uniques_param, has_updated_at) %}
+{% macro save_method(uniques_param, auto_update_fields) %}
     {% if uniques_param %}
     async def validate_uniques(self):
         {% for unique in uniques_param %}
@@ -41,14 +41,22 @@
 
     async def save(self, *args, **kwargs):
         await self.validate_uniques()
-        {% if has_updated_at %}
-        self.updatedAt = datetime.now(timezone.utc)
+        {% if auto_update_fields %}
+        # Update timestamp fields for auto-updating fields
+        current_time = datetime.now(timezone.utc)
+        {% for field in auto_update_fields %}
+        self.{{ field }} = current_time
+        {% endfor %}
         {% endif %}
         return await super().save(*args, **kwargs)
     {% else %}
     async def save(self, *args, **kwargs):
-        {% if has_updated_at %}
-        self.updatedAt = datetime.now(timezone.utc)
+        {% if auto_update_fields %}
+        # Update timestamp fields for auto-updating fields
+        current_time = datetime.now(timezone.utc)
+        {% for field in auto_update_fields %}
+        self.{{ field }} = current_time
+        {% endfor %}
         {% endif %}
         return await super().save(*args, **kwargs)
     {% endif %}

@@ -26,7 +26,7 @@ class {{ entity }}(Document):
     class Settings:
         name = "{{ entity|lower() }}"
 
-{{ macros.save_method([], 'updatedAt' in fields) }}
+{{ macros.save_method([], auto_update_fields) }}
 
 class {{ entity }}Create(BaseModel):
     # Fields for create operations
@@ -49,7 +49,7 @@ class {{ entity }}({{ inherits|join(', ') }}):
     class Settings:
         name = "{{ entity|lower() }}"
 
-{{ macros.save_method(uniques if uniques else [], 'updatedAt' in fields) }}
+{{ macros.save_method(uniques if uniques else [], auto_update_fields) }}
 
 class {{ entity }}Create({% for base in raw_inherits %}{% if base is string %}{{ base }}Create{% endif %}{% endfor %}):
     # {{ entity }}-specific fields

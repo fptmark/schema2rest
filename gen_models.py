@@ -137,12 +137,19 @@ def generate_models(schema_file: str, path_root: str):
                     fields[field][attribute] = get_dictionary_value(schema.dictionaries(), value)
 
         uniques = entity_def.get("uniques", [])
+        # Find all auto-update fields
+        auto_update_fields = []
+        for field_name, field_info in fields.items():
+            if field_info.get('type') == 'ISODate' and field_info.get('autoUpdate', False):
+                auto_update_fields.append(field_name)
+
         rendered_model = model_template.render(
             entity=entity_name,
             fields=fields,
             inherits=processed_bases,  # For class declaration
             raw_inherits=raw_inherits,  # For generating imports
             uniques=uniques,
+            auto_update_fields=auto_update_fields,
             services=schema.services()  # Pass the _services mapping from the YAML
         )
         out_filename = f"{entity_name.lower()}_model.py"
