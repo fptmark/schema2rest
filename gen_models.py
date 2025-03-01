@@ -28,9 +28,9 @@ def model_field_filter(field_data: dict) -> str:
 
     # Check for autoGenerate or autoUpdate flags.
     if field_data.get('autoGenerate', False) or field_data.get('autoUpdate', False):
-        # For ISODate, we'll use datetime.utcnow as the default factory.
+        # For ISODate, we'll use datetime.now(timezone.utc) as the default factory.
         # You could add additional logic here for other types.
-        default_str = "Field(default_factory=datetime.utcnow)"
+        default_str = "Field(default_factory=lambda: datetime.now(timezone.utc))"
         base_type = py_type  # Even if required is true, we supply a default.
     else:
         required_val = field_data.get('required', False)

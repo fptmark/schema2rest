@@ -1,32 +1,12 @@
-{# Dynamic import generation using raw_inherits #}
-{% if raw_inherits %}
-{% for base in raw_inherits %}
-    {% if base is string %}
-from .{{ base|lower() }}_model import {{ base }}
-    {% elif base is mapping %}
-        {% for key, value in base.items() %}
-            {% if key == "service" %}
-                {% for service in value %}
-{% set module_path = "app.services." ~ service %}
-{% set parts = service | split('.') %}
-{% set alias = parts[0] | capitalize %}
-{% set concrete_class = (parts[1] | capitalize) ~ "Auth" %}
-from {{ module_path }} import {{ concrete_class }} as {{ alias }}
-                {% endfor %}
-            {% else %}
-# TODO: Import for {{ key }}: {{ value }}
-            {% endif %}
-        {% endfor %}
-    {% endif %}
-{% endfor %}
-{% else %}
-from beanie import Document
-{% endif %}
+{# Import macros #}
+{% import "macros.j2" as macros %}
 
+{# Generate imports #}
+{{ macros.generate_imports(raw_inherits) }}
 from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, Field, validator
-from typing import Optional
-from datetime import datetime
+from typing import Optional, List
+from datetime import datetime, timezone
 import re
 import json
 
@@ -37,96 +17,48 @@ class UniqueValidationError(Exception):
     def __str__(self):
         return f"Unique constraint violation for fields {self.fields}: {self.query}"
 
-{# --- The rest of your template remains unchanged --- #}
-
-class {{ entity }}Base(BaseModel):
-{% for field_name, field_info in fields.items() %}
-    {{ field_name }}: {{ field_info|model_field }}
-{% endfor %}
-
-    {# Custom validators for fields with constraints #}
-    {% for field_name, field_info in fields.items() %}
-        {% set ns = namespace(messages={}) %}
-        {% for key, value in field_info.items() %}
-            {% if key.endswith('.message') %}
-                {% set ns.messages = ns.messages | combine({ key[:-8]: value }) %}
-            {% endif %}
-        {% endfor %}
-        {% if field_info.get('enum') is not none or ns.messages|length %}
-    @validator('{{ field_name }}')
-    def validate_{{ field_name }}(cls, v):
-        _custom = {{ ns.messages|tojson }}
-        {% if field_info.get('minLength') is not none %}
-        if len(v) < {{ field_info.get('minLength') }}:
-            {% if ns.messages.get('minLength') is not none %}
-            raise ValueError(_custom["minLength"])
-            {% else %}
-            raise ValueError("{{ field_name }} must be at least {{ field_info.get('minLength') }} characters")
-            {% endif %}
-        {% endif %}
-        {% if field_info.get('maxLength') is not none %}
-        if len(v) > {{ field_info.get('maxLength') }}:
-            {% if ns.messages.get('maxLength') is not none %}
-            raise ValueError(_custom["maxLength"])
-            {% else %}
-            raise ValueError("{{ field_name }} must be at most {{ field_info.get('maxLength') }} characters")
-            {% endif %}
-        {% endif %}
-        {% if field_info.get('pattern') is not none %}
-        if not re.match(r'{{ field_info.get("pattern") }}', v):
-            {% if ns.messages.get('pattern') is not none %}
-            raise ValueError(_custom["pattern"])
-            {% else %}
-            raise ValueError("{{ field_name }} is not in the correct format")
-            {% endif %}
-        {% endif %}
-        {% if field_info.get('enum') is not none %}
-        allowed = {{ field_info.get('enum')|tojson }}
-        if v not in allowed:
-            {% if ns.messages.get('enum') is not none %}
-            raise ValueError(_custom["enum"])
-            {% else %}
-            raise ValueError("{{ field_name }} must be one of " + ", ".join(allowed))
-            {% endif %}
-        {% endif %}
-        return v
-        {% endif %}
-    {% endfor %}
-
-
-class {{ entity }}({{ inherits|join(', ') }}, {{ entity }}Base):
+{% if raw_inherits|length == 0 %}
+{# This is a base entity that doesn't inherit from anything #}
+class {{ entity }}(Document):
+    # Base fields
+{{ macros.field_declarations(fields) }}
+    
     class Settings:
         name = "{{ entity|lower() }}"
 
-{% if uniques %}
-    async def validate_uniques(self):
-        {% for unique in uniques %}
-        query_{{ loop.index }} = {
-            {% for field in unique %}
-            "{{ field }}": self.{{ field }},
-            {% endfor %}
-        }
-        existing_{{ loop.index }} = await self.__class__.find_one(query_{{ loop.index }})
-        if existing_{{ loop.index }}:
-            raise UniqueValidationError({{ unique|tojson }}, query_{{ loop.index }})
-        {% endfor %}
+{{ macros.save_method([], 'updatedAt' in fields) }}
 
-    async def save(self, *args, **kwargs):
-        await self.validate_uniques()
-        return await super().save(*args, **kwargs)
-    {% else %}
-    async def save(self, *args, **kwargs):
-        return await super().save(*args, **kwargs)
-    {% endif %}
+class {{ entity }}Create(BaseModel):
+    # Fields for create operations
+{{ macros.field_declarations(fields) -}}
+    {% include "validation.j2" %}
+{{ macros.orm_config() }}
 
+class {{ entity }}Read(BaseModel):
+    # Fields for read operations
+    id: Optional[PydanticObjectId] = Field(alias="_id")
+{{ macros.optional_field_declarations(fields) }}
+{{ macros.orm_config(true) }}
 
-class {{ entity }}Create({{ entity }}Base):
-    class Config:
-        orm_mode = True
+{% else %}
+{# This is an entity that inherits from other entities #}
+class {{ entity }}({{ inherits|join(', ') }}):
+    # {{ entity }}-specific fields
+{{ macros.field_declarations(fields) }}
+    
+    class Settings:
+        name = "{{ entity|lower() }}"
 
+{{ macros.save_method(uniques if uniques else [], 'updatedAt' in fields) }}
 
-class {{ entity }}Read({{ entity }}Base):
-    class Config:
-        orm_mode = True
-        allow_population_by_field_name = True
-        json_encoders = {PydanticObjectId: str}
+class {{ entity }}Create({% for base in raw_inherits %}{% if base is string %}{{ base }}Create{% endif %}{% endfor %}):
+    # {{ entity }}-specific fields
+{{ macros.field_declarations(fields) -}}
+    {% include "validation.j2" %}
+{{ macros.orm_config() }}
+
+class {{ entity }}Read({% for base in raw_inherits %}{% if base is string %}{{ base }}Read{% endif %}{% endfor %}):
+    # {{ entity }}-specific fields
+{{ macros.optional_field_declarations(fields) }}
+{{ macros.orm_config(true) }}
+{% endif %}
