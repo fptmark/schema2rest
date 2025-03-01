@@ -25,8 +25,7 @@ def run(schema):
         # Build a set of needed index definitions: {((field1, ASC), (field2, ASC)), is_unique_boolean}
         # We'll always use ASCENDING for each field here.
         needed_indexes = []
-        for unique_def in uniques:
-            fields = unique_def.get("fields", [])
+        for fields in uniques:
             if fields:
                 index_tuple = tuple((field, pymongo.ASCENDING) for field in fields)
                 needed_indexes.append((index_tuple, True))  # True => unique index
