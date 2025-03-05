@@ -1,0 +1,138 @@
+{% set router_name = entity|lower ~ "_router" %}
+from fastapi import APIRouter, HTTPException, Response
+from typing import List, Dict, Any
+from app.models.{{ entity|lower }}_model import {{ entity}}, {{ entity}}Create, {{ entity}}Read
+from beanie import PydanticObjectId
+import logging
+import json
+
+router = APIRouter()
+
+# Helper function to wrap response with metadata
+def wrap_response(data, include_metadata=True):
+    """Wrap response data with metadata for UI generation."""
+    if not include_metadata:
+        return data
+    
+    result = {
+        "data": data,
+    }
+    
+    # Add metadata if requested
+    if include_metadata:
+        result["metadata"] = {{ entity }}.get_metadata()
+    
+    return result
+
+# Helper function to wrap collection response with metadata
+def wrap_collection_response(data_list, include_metadata=True):
+    """Wrap response data list with metadata for UI generation."""
+    if not include_metadata:
+        return data_list
+    
+    result = {
+        "data": data_list,
+    }
+    
+    # Add metadata if requested
+    if include_metadata:
+        result["metadata"] = {{ entity }}.get_metadata()
+    
+    return result
+
+# CREATE
+@router.post('/')
+async def create_{{ entity|lower }}(item: {{ entity}}Create, include_metadata: bool = True):
+    logging.info("Received request to create a new {{ entity|lower }}.")
+    # Instantiate a document from the model
+    doc = {{ entity}}(**item.dict(exclude_unset=True))
+    try:
+        await doc.save()  # This triggers BaseEntity's default factories and save() override.
+        logging.info(f"{{ entity}} created successfully with _id: {doc._id}")
+    except Exception as e:
+        logging.exception("Failed to create {{ entity|lower }}.")
+        raise HTTPException(status_code=500, detail='Internal Server Error')
+    
+    return wrap_response(doc, include_metadata)
+
+# GET ALL
+@router.get('/')
+async def get_all_{{ entity|lower }}s(include_metadata: bool = True):
+    logging.info("Received request to fetch all {{ entity|lower }}s.")
+    try:
+        docs = await {{ entity}}.find_all().to_list()
+        logging.info(f"Fetched {len(docs)} {{ entity|lower }}(s) successfully.")
+    except Exception as e:
+        logging.exception("Failed to fetch all {{ entity|lower }}s.")
+        raise HTTPException(status_code=500, detail='Internal Server Error')
+    
+    return wrap_collection_response(docs, include_metadata)
+
+# GET ONE BY ID
+@router.get('/{item_id}')
+async def get_{{ entity|lower }}(item_id: str, include_metadata: bool = True):
+    logging.info(f"Received request to fetch {{ entity|lower }} with _id: {item_id}")
+    try:
+        doc = await {{ entity}}.get(PydanticObjectId(item_id))
+        if not doc:
+            logging.warning(f"{{ entity}} with _id {item_id} not found.")
+            raise HTTPException(status_code=404, detail='{{ entity}} not found')
+        logging.info(f"Fetched {{ entity|lower }} with _id: {item_id} successfully.")
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logging.exception(f"Failed to fetch {{ entity}} with _id: {item_id}")
+        raise HTTPException(status_code=500, detail='Internal Server Error')
+    
+    return wrap_response(doc, include_metadata)
+
+# UPDATE
+@router.put('/{item_id}')
+async def update_{{ entity|lower }}(item_id: str, item: {{ entity}}Create, include_metadata: bool = True):
+    logging.info(f"Received request to update {{ entity|lower }} with _id: {item_id}")
+    try:
+        doc = await {{ entity}}.get(PydanticObjectId(item_id))
+        if not doc:
+            logging.warning(f"{{ entity}} with _id {item_id} not found for update.")
+            raise HTTPException(status_code=404, detail='{{ entity}} not found')
+        update_data = item.dict(exclude_unset=True)
+        # Optionally prevent updating base fields:
+        update_data.pop('_id', None)
+        update_data.pop('createdAt', None)
+        # For updatedAt, BaseEntity.save() will update it automatically.
+        for key, value in update_data.items():
+            setattr(doc, key, value)
+        await doc.save()
+        logging.info(f"{{ entity}} with _id {item_id} updated successfully.")
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logging.exception(f"Failed to update {{ entity}} with _id: {item_id}")
+        raise HTTPException(status_code=500, detail='Internal Server Error')
+    
+    return wrap_response(doc, include_metadata)
+
+# DELETE
+@router.delete('/{item_id}')
+async def delete_{{ entity|lower }}(item_id: str):
+    logging.info(f"Received request to delete {{ entity|lower }} with _id: {item_id}")
+    try:
+        doc = await {{ entity}}.get(PydanticObjectId(item_id))
+        if not doc:
+            logging.warning(f"{{ entity}} with _id {item_id} not found for deletion.")
+            raise HTTPException(status_code=404, detail='{{ entity}} not found')
+        await doc.delete()
+        logging.info(f"{{ entity}} with _id {item_id} deleted successfully.")
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logging.exception(f"Failed to delete {{ entity}} with _id: {item_id}")
+        raise HTTPException(status_code=500, detail='Internal Server Error')
+    
+    return {'message': '{{ entity}} deleted successfully'}
+
+# GET METADATA
+@router.get('/metadata')
+async def get_{{ entity|lower }}_metadata():
+    """Get metadata for {{ entity }} entity."""
+    return {{ entity }}.get_metadata()
