@@ -2,6 +2,7 @@
 Decorator handling module for processing MMD decorators
 """
 import re
+import sys
 from typing import Dict, List, Tuple, Set, Any, Optional
 import json5
 
@@ -23,24 +24,11 @@ class Decorator:
     Class to handle all decorator processing
     """
     def __init__(self):
-        # Track stats for each decorator type
-        self.stats = {
-            "validation": 0,
-            "ui": 0,
-            "dictionary": 0,
-            "inherit": 0,
-            "service": 0,
-            "unique": 0,
-        }
         
         # Store structured data
         self.entities = {}  # List of entity objects
         self.dictionaries = {}  # List of dictionary objects
         
-        # Internal mapping for faster lookups
-        # self._entity_map = {}  # entity_name -> entity object index
-        # self._field_map = {}   # (entity_name, field_name) -> (entity_index, field_index)
-        # self._dict_map = {}    # dict_name -> dict object index
     
     def has_decorator(self, text: str) -> bool:
         """
@@ -149,7 +137,11 @@ class Decorator:
         if text.endswith(','):
             text = text[:-1]
 
-        data = json5.loads(text)
+        try:
+            data = json5.loads(text)
+        except:
+            print(f'*** Error parsing line {text}')
+            sys.exit(-1)
         if decorator == VALIDATE or self._validatate_ui_attributes(data):
             if isinstance(data, dict):
                 entity = self.entities.setdefault(entity_name, {})
@@ -188,17 +180,10 @@ class Decorator:
         dictionary_text = ' '.join(words[1:])
         dict_content = json5.loads(dictionary_text)
 
-        if isinstance(dict_content, dict):
-
         # Store in class variables
+        if isinstance(dict_content, dict):
             self.dictionaries.setdefault(dict_name, {}).update(dict_content)
 
-    def _get_entity(self, name):
-        # if name in self.entities:
-        #     return self.entities[name]
-        # else:
-            return self.entities.setdefault(name, {})
-    
 
     def _validatate_ui_attributes(self, attributes) -> bool:
         """
