@@ -24,7 +24,7 @@ class {{ entity }}(Document):
 {{ macros.field_declarations(fields) }}
     
     # Class-level metadata for UI generation
-    __ui_metadata__: ClassVar[Dict[str, Any]] = {{ metadata|tojson }}
+    __ui_metadata__: ClassVar[Dict[str, Any]] = {{ metadata }}
     
     class Settings:
         name = "{{ entity|lower() }}"
@@ -55,7 +55,7 @@ class {{ entity }}({{ inherits|join(', ') }}):
 {{ macros.field_declarations(fields) }}
     
     # Class-level metadata for UI generation
-    __ui_metadata__: ClassVar[Dict[str, Any]] = {{ metadata|tojson }}
+    __ui_metadata__: ClassVar[Dict[str, Any]] = {{ metadata }}
     
     class Settings:
         name = "{{ entity|lower() }}"

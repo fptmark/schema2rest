@@ -78,9 +78,9 @@ class SchemaParser:
                 target = words[1][:pos].strip() if pos >= 0 else words[1].strip()
                 self.relationships.append((source, target))
 
-                # Auto add a foreign key into each entity based on a relationship
-                entity = self.entities[target]
-                entity["fields"][source + "Id"] = { "type": "ObjectId", "required": 'true' }
+                # Auto add a foreign key into each entity based on a relationship - this is now handled by the model generator
+                # entity = self.entities[target]
+                # entity["fields"][source + "Id"] = { "type": "ObjectId", "required": 'true' }
 
 
         dictionaries = decorator.get_objects()

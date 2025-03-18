@@ -22,19 +22,14 @@ def generate(schema_file, path_root):
     """
         
     try:
-        print("Generating models...")
         generate_models(schema_file, path_root)
         
-        print("Generating routes...")
         generate_routes(schema_file, path_root)
         
-        print("Generating service routes...")
         generate_service_routes(schema_file, path_root)
         
-        print("Generating database module...")
         generate_db(schema_file, path_root)
         
-        print("Generating main application file...")
         generate_main(schema_file, path_root)
         
         print("Code generation completed successfully!")
@@ -50,4 +45,5 @@ if __name__ == "__main__":
     if len(sys.argv) != 3:
         print("Usage: python generate_code.py <schema.json> <output_dir>")
         sys.exit(1)
-    sys.exit(generate(sys.argv[1], sys.argv[2]))
+    results = generate(sys.argv[1], sys.argv[2])
+    # sys.exit(results)
