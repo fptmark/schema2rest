@@ -23,11 +23,11 @@ class Decorator:
     """
     Class to handle all decorator processing
     """
-    def __init__(self):
+    def __init__(self, entities):
         
         # Store structured data
-        self.entities = {}  # List of entity objects
-        self.dictionaries = {}  # List of dictionary objects
+        self.entities = entities
+        self.dictionaries = {}
         
     
     def has_decorator(self, text: str) -> bool:
@@ -44,18 +44,16 @@ class Decorator:
             return False
             
         # Check for decorator(s) where there is no space between %% and @
-        i1 = text.find("%%")
-        i2 = text.find("@")
-        if i2 > i1 and i1 >= 0:
-            if i2 == i1 + 2: 
-                words = text[i2+1:].split()
-                return words[0] in ALL_DECORATORS
-        
+        pos = text.find("%%@")
+        if pos >= 0:
+            words = text[pos+2:].split()
+            return words[0] in ALL_DECORATORS
+
         # Check for decorator(s) where there are spaces between %% and @
         words = text.split()
         try:
-            i1 = words.index("%%")
-            return words[i1+1] in ALL_DECORATORS
+            pos = words.index("%%")
+            return words[pos+1] in ALL_DECORATORS
         except:
             return False
         
@@ -87,14 +85,14 @@ class Decorator:
         if decorator == DICTIONARY and text.startswith("%%"):
             self._process_dictionary(decoration)
 
-        elif entity_name and field_name and field_type and decorator in FIELD_DECORATORS:
-            self._process_field_entity_decorations(decorator, entity_name, field_name, field_type, decorator_text)
+        elif entity_name:
+            if decorator in FIELD_DECORATORS and field_name:
+                self._process_field_entity_decorations(decorator, entity_name, field_name, field_type, decorator_text)
+            elif decorator in ENTITY_DECORATORS:
+                self._process_entity_decorations(decorator, entity_name, decoration)
 
-        elif entity_name and decorator in ENTITY_DECORATORS and field_name is None:
-            self._process_entity_decorations(decorator, entity_name, decoration)
-        
     
-    def _process_field_entity_decorations(self, decorator: str, entity_name: str, field_name: str, field_type: str, text: str):
+    def _process_field_entity_decorations(self, decorator: str, entity_name: str, field_name: Optional[str], field_type: Optional[str], text: str):
         # if there are multiple decorators, split and recurse
         index = text[1:].find('@')
         if index > -1:
@@ -119,9 +117,6 @@ class Decorator:
             field_name: Optional field name
         """
         
-        if not self.has_decorator(text):
-            return
-            
         # Update entity based on decoration type
         if decorator == INHERIT:
             self._add_inherit(entity_name, text)
@@ -144,27 +139,32 @@ class Decorator:
             sys.exit(-1)
         if decorator == VALIDATE or self._validatate_ui_attributes(data):
             if isinstance(data, dict):
-                entity = self.entities.setdefault(entity_name, {})
-                fields = entity.setdefault('fields', {})
-                field = fields.setdefault(field_name, {})
-                field.setdefault(decorator[1:], {}).update(data)
+                entity = self.entities[entity_name]
+                fields = entity['fields'] 
+                field = fields[field_name]
+
+                # UI Metadata goes in a subsection
+                if decorator == UI:
+                    field.setdefault('ui_metadata', {}).update(data)
+                else:
+                    field.update(data)
 
 
     # Handles unique from a field or entity defn
     def _add_unique(self, entity_name, field_names):
-        entity = self.entities.setdefault(entity_name, {})
+        entity = self.entities[entity_name] 
         fields = [word.strip() for word in field_names.split('+')]
-        entity.setdefault('unique', []).extend(fields)
+        entity.setdefault('unique', []).append(fields)
 
     # Handles inherit from an entity
     def _add_inherit(self, entity_name, obj_name):
-        entity = self.entities.setdefault(entity_name, {})
-        entity.setdefault('inherits', []).extend(obj_name.strip())
+        entity = self.entities[entity_name] 
+        entity.setdefault('inherits', []).append(obj_name.strip())
     
     # Handles service from an entity
     def _add_service(self, entity_name, obj_name):
-        entity = self.entities.setdefault(entity_name, {})
-        entity.setdefault('services', []).extend(obj_name.strip())
+        entity = self.entities[entity_name] 
+        entity.setdefault('services', []).append(obj_name.strip())
 
     # Handles dictionary
     def _process_dictionary(self, text: str):
@@ -216,6 +216,6 @@ class Decorator:
         return True
 
     def get_objects(self):
-        return self.entities, self.dictionaries
+        return self.dictionaries
                     
         
