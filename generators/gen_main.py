@@ -71,7 +71,7 @@ def generate_main(schema_path, path_root):
             if isinstance(inherits, dict) and "service" in inherits:
                 for service_instance in inherits["service"]:
                     words = service_instance.split('.')
-                    lines.append(f"app.include_router({entity_lower}_{words[0]}_router, prefix='/{entity_lower}/{words[0]}', tags=['{entity_name}'])\n")
+                    lines.append(f"app.include_router({entity_lower}_{words[0]}_router, prefix='/api/{entity_lower}/{words[0]}', tags=['{entity_name}'])\n")
 
     # Add root endpoint
     lines.extend( helpers.read_file_to_array(TEMPLATE, 3))
