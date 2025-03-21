@@ -13,11 +13,13 @@ VALIDATE = "@validate"
 INHERIT = "@inherit"
 SERVICE = "@service"
 UI = "@ui"
+OPERATION = "@operations"
+OPERATIONS = ["create", "read", "update", "delete"]
 
 # All supported decorators
-ALL_DECORATORS = [DICTIONARY, UNIQUE, VALIDATE, INHERIT, SERVICE, UI]
 FIELD_DECORATORS = [UNIQUE, VALIDATE, UI]
-ENTITY_DECORATORS = [INHERIT, SERVICE, UNIQUE]
+ENTITY_DECORATORS = [INHERIT, SERVICE, UNIQUE, OPERATION]
+ALL_DECORATORS = FIELD_DECORATORS + ENTITY_DECORATORS #[DICTIONARY, UNIQUE, VALIDATE, INHERIT, SERVICE, UI]
 
 class Decorator:
     """
@@ -118,12 +120,19 @@ class Decorator:
         """
         
         # Update entity based on decoration type
-        if decorator == INHERIT:
-            self._add_inherit(entity_name, text)
-        elif decorator == SERVICE:
-            self._add_service(entity_name, text)
+        if decorator == INHERIT or decorator == SERVICE:
+            self._add_entity_decoration(decorator, entity_name, text)
         elif decorator == UNIQUE:
             self._add_unique(entity_name, text)
+        elif decorator == OPERATION:
+            operation = ''
+            permissions = json5.loads(text)
+            if isinstance(permissions, list):
+                for elem in permissions:
+                    if isinstance(elem, str) and elem.lower() in OPERATIONS:
+                        operation = operation + elem[0].lower()
+            if len(operation) > 0:
+                self._add_entity_decoration(decorator, entity_name, operation)
 
 
     # Handles @validate and @ui
@@ -156,15 +165,19 @@ class Decorator:
         fields = [word.strip() for word in field_names.split('+')]
         entity.setdefault('unique', []).append(fields)
 
+    def _add_entity_decoration(self, decorator, entity_name, value):
+        entity = self.entities[entity_name] 
+        entity.setdefault(decorator[1:], []).append(value.strip())
+
     # Handles inherit from an entity
-    def _add_inherit(self, entity_name, obj_name):
-        entity = self.entities[entity_name] 
-        entity.setdefault('inherits', []).append(obj_name.strip())
+    # def _add_inherit(self, entity_name, obj_name):
+    #     entity = self.entities[entity_name] 
+    #     entity.setdefault('inherits', []).append(obj_name.strip())
     
-    # Handles service from an entity
-    def _add_service(self, entity_name, obj_name):
-        entity = self.entities[entity_name] 
-        entity.setdefault('services', []).append(obj_name.strip())
+    # # Handles service from an entity
+    # def _add_service(self, entity_name, obj_name):
+    #     entity = self.entities[entity_name] 
+    #     entity.setdefault('services', []).append(obj_name.strip())
 
     # Handles dictionary
     def _process_dictionary(self, text: str):
