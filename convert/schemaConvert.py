@@ -145,12 +145,12 @@ def extract_entities_metadata(entities):
     inherits = set()
     
     for entity_name, entity_data in entities.items():
-        if "inherits" in entity_data:
-            for item in entity_data["inherits"]:
+        if "inherit" in entity_data:
+            for item in entity_data["inherit"]:
                 if isinstance(item, str):
                     inherits.add(item)
-        if "services" in entity_data:
-            for item in entity_data["services"]:
+        if "service" in entity_data:
+            for item in entity_data["service"]:
                 if isinstance(item, str):
                         services.add(item)
     

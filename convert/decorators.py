@@ -198,7 +198,7 @@ class Decorator:
         # List of supported UI attributes
         supported_attrs = {
             "displayName": [],
-            "display": ["always", "detail", "form", "hidden"],
+            "display": [],
             "widget": [
                 "text", "textarea", "password", "email", "url", "number",
                 "checkbox", "select", "multiselect", "date", "jsoneditor", "reference"
