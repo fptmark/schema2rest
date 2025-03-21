@@ -169,16 +169,6 @@ class Decorator:
         entity = self.entities[entity_name] 
         entity.setdefault(decorator[1:], []).append(value.strip())
 
-    # Handles inherit from an entity
-    # def _add_inherit(self, entity_name, obj_name):
-    #     entity = self.entities[entity_name] 
-    #     entity.setdefault('inherits', []).append(obj_name.strip())
-    
-    # # Handles service from an entity
-    # def _add_service(self, entity_name, obj_name):
-    #     entity = self.entities[entity_name] 
-    #     entity.setdefault('services', []).append(obj_name.strip())
-
     # Handles dictionary
     def _process_dictionary(self, text: str):
         """
