@@ -1,90 +1,64 @@
+#!/usr/bin/env python3
 import sys
+import os
 from pathlib import Path
-
-# Add parent directory to path to allow importing helpers
+from jinja2 import Environment, FileSystemLoader
 sys.path.append(str(Path(__file__).parent.parent))
-from common import helpers
-from common import Schema
+from common.schema import Schema  # Your Schema class (in schema.py) should accept (schema_file, path_root)
+# from app.helpers import model_field_filter  # Your helper function
 
-script_dir = Path(__file__).resolve().parent
+############################
+# JINJA ENVIRONMENT SETUP
+############################
+def combine_filter(dict1, dict2):
+    new_dict = dict1.copy()
+    new_dict.update(dict2)
+    return new_dict
 
-# Paths
-MAIN_FILE = Path("app/main.py")
-RESERVED_TYPES = {"ISODate", "ObjectId"}  # Reserved types to skip
-# TEMPLATE = "generators/templates/main/main"
-TEMPLATE = str(script_dir / "templates" / "main" / "main")
+def get_jinja_env() -> Environment:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    template_dir = os.path.join(script_dir, "templates", "main")
+    env = Environment(
+        loader=FileSystemLoader(template_dir),
+        autoescape=False,
+        trim_blocks=True,
+        lstrip_blocks=True,
+        extensions=['jinja2.ext.do']
+    )
+    env.filters['combine'] = combine_filter
+    env.filters['split'] = lambda s, sep=None: s.split(sep)
+    return env
 
-def generate_main(schema_path, path_root):
-    lines: list[str] = []
+def generate_main(schema_file, path_root):
 
-    schema = Schema(schema_path)
+    print("Generating main...")
+    main_dir = os.path.join(path_root, "app", "main")
+    schema = Schema(schema_file)
+    env = get_jinja_env()
+    
+    try:
+        model_template = env.get_template("main.j2")
+    except Exception as e:
+        print("Error loading main.j2 template:", e)
+        return
 
-    # add imports for all services
-    services = schema.services()
-    for service in services:
-        words = service.split('.')
-        alias = words[0].capitalize()
-        imported = words[1].capitalize() + alias
-        lines.append(f"from app.services.{service} import {imported} as {alias}\n")
-
-    # Start building the main.py content
-    lines.extend(helpers.read_file_to_array(TEMPLATE, 1))
-
-    # Import routes dynamically for valid entities and determine the list of services for each entity
-    services = {}
-    for entity_name, details in schema.concrete_entities().items():
-        entity_lower = entity_name.lower()
-        lines.append(f"from app.routes.{entity_lower}_router import router as {entity_lower}_router\n")
-        for inherits in details.get("inherits", []):
-            if isinstance(inherits, dict) and "service" in inherits:
-                for service_instance in inherits["service"]:
-                    words = service_instance.split('.')
-                    services.setdefault(entity_name, []).append(words[0])
-
-    # Add routing for each entity-service pair
-    lines.extend("\n#Add routing for each entity-service pair\n")
-    for entity_name in services.keys():
-        for service in services[entity_name]:
-            entity_lower = entity_name.lower()
-            entity_service = f"{entity_lower}_{service}"
-            lines.append(f"from routes.services.{service}.{entity_service}_routes import router as {entity_service}_router\n")
-
-    # Initialize FastAPI app
-    lines.extend( helpers.read_file_to_array(TEMPLATE, 2))
-
-    # Add service initializers
-    lines.append("# Add service initializers\n")
-    for service in schema.services():
-        words = service.split('.')
-        alias = words[0].capitalize()
-        lines.append(f"    print(f'>>> Initializing service {service}')\n")
-        lines.append(f"    await {alias}.initialize(config[\'{service}\'])\n")
-    lines.append("\n")
-
-    # Register routes dynamically
-    lines.append("# Register routes\n")
-    for entity_name, details in schema.concrete_entities().items():
-        entity_lower = entity_name.lower()
-        lines.append(f"app.include_router({entity_lower}_router, prefix='/{entity_lower}', tags=['{entity_name}'])\n")
-        # Add routing for each entity-service pair
-        for inherits in details.get("inherits", []):
-            if isinstance(inherits, dict) and "service" in inherits:
-                for service_instance in inherits["service"]:
-                    words = service_instance.split('.')
-                    lines.append(f"app.include_router({entity_lower}_{words[0]}_router, prefix='/api/{entity_lower}/{words[0]}', tags=['{entity_name}'])\n")
-
-    # Add root endpoint
-    lines.extend( helpers.read_file_to_array(TEMPLATE, 3))
-
-    # Save main.py
-    outfile = helpers.generate_file(path_root, MAIN_FILE, lines)
-    print(f">>> Generated {outfile}")
+    rendered = model_template.render(
+        entities=schema.concrete_entities(),  # Pass the concrete entities
+        services=schema.services()  # Pass the _services mapping from the YAML
+    )
+        
+    out_path = os.path.join(path_root, "app", "main.py")
+    with open(out_path, "w") as f:
+        f.write(rendered)
+    
+    print(f"Generated {out_path} successfully.")
 
 if __name__ == "__main__":
+    # Original CLI handling: expect two positional arguments.
     if len(sys.argv) < 3:
-        print("Usage: python gen_main.py <schema.yaml> <path_root")
+        print("Usage: python gen_main.py <schema.yaml> <path_root>")
         sys.exit(1)
-
+    
     schema_file = sys.argv[1]
     path_root = sys.argv[2]
     generate_main(schema_file, path_root)

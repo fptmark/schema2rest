@@ -1,0 +1,84 @@
+import sys
+from pathlib import Path
+from app.utilities.config import load_config 
+from app.db import Database
+
+{# --- Dynamic Import of Service Classes --- #}
+{% for service in services %}
+{% set tokens = service.split('.') %}
+from app.services.{{ service }} import {{ tokens[1]|capitalize }}{{ tokens[2]|capitalize }} as {{ tokens[2]|capitalize }}{{ tokens[2]|capitalize }}
+{% endfor %}
+
+{# --- Dynamic Import of Route Routers for Entities --- #}
+{% for entity in entities %}
+from app.routes.{{ entity|lower }}_router import router as {{ entity|lower }}_router
+{% endfor %}
+
+import logging
+LOG_FILE = "app.log"
+config = load_config()
+is_dev = config.get('environment', 'production') == 'development'
+my_log_level = config.get('log_level', 'info' if is_dev else 'warning').upper()
+
+logging.basicConfig(
+    level=my_log_level,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout),  # Output to console
+        logging.FileHandler(LOG_FILE, mode="a"),  # Write to a log file
+    ],
+)
+logger = logging.getLogger(__name__)
+
+# Add the project root to PYTHONPATH
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+from fastapi import FastAPI
+
+# Create the FastAPI app.
+app = FastAPI()
+
+# Add CORS middleware
+from fastapi.middleware.cors import CORSMiddleware
+
+angular = config.get('angular-ui-url', 'http://localhost:4200')
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[angular],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.on_event('startup')
+async def startup_event():
+    logger.info('Startup event called')
+    logger.info(f"Running in {'development' if config.get('environment', 'production') == 'development' else 'production'} mode")
+    await Database.init(config['mongo_uri'], config['db_name']) 
+    # Initialize the auth service from the hard-coded import.
+    print(f'>>> Initializing service auth.cookies.redis')
+    await Auth.initialize(config['auth.cookies.redis'])
+
+{# --- Dynamic Registration of Routers for Entities --- #}
+{% for entity in entities %}
+app.include_router({{ entity|lower }}_router, prefix='/api/{{ entity|lower }}', tags=['{{ entity|title }}'])
+{% endfor %}
+
+@app.get('/')
+def read_root():
+    return {'message': 'Welcome to the Event Management System'}
+
+if __name__ == '__main__':
+    import uvicorn
+    logger.info("Welcome to the Event Management System")
+    my_host = config.get('host', '0.0.0.0')
+    my_port = config.get('server_port', 8000)
+    logger.info(f' Access Swagger docs at http://{my_host}:{my_port}/docs')
+    uvicorn.run(
+        'app.main:app',
+        host=my_host,
+        port=my_port,
+        reload=is_dev,
+        reload_dirs=['app'] if is_dev else None,
+        log_level=my_log_level.lower(),
+    )
