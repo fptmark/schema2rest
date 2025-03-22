@@ -96,13 +96,13 @@ The `@ui` decorator allows you to customize how fields are displayed in the user
 
 ### Display Modes
 
-The `display` attribute can have the following values:
-- `always` - Display in all views (default)
-- `detail` - Display only in detail views, not in tables/lists
-- `form` - Display only in edit/create forms, not in read-only views
-- `hidden` - Don't display in UI at all
+The `display` attribute is a multi-value seperated by a vertical bar (|)
+- `all` or '' or missing - Display in all views (default)
+- `summary` - Display in inital summary view
+- `detail` - Display in detail views
+- `form` - Display in edit forms
+- `hidden` - Do not show (must be display='hidden')
 
-Note: Setting `display: "hidden"` is the preferred way to hide fields rather than using the deprecated `hidden` attribute.
 
 ### Widget Types
 
