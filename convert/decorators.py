@@ -18,7 +18,7 @@ OPERATIONS = ["create", "read", "update", "delete"]
 
 # All supported decorators
 FIELD_DECORATORS = [UNIQUE, VALIDATE, UI]
-ENTITY_DECORATORS = [INHERIT, SERVICE, UNIQUE, OPERATION]
+ENTITY_DECORATORS = [INHERIT, SERVICE, UNIQUE, OPERATION, UI]
 ALL_DECORATORS = FIELD_DECORATORS + ENTITY_DECORATORS #[DICTIONARY, UNIQUE, VALIDATE, INHERIT, SERVICE, UI]
 
 class Decorator:
@@ -88,23 +88,25 @@ class Decorator:
             self._process_dictionary(decoration)
 
         elif entity_name:
+            decorator_text = decorator_text[len(decorator):].strip()  # remove the decorator from the text
             if decorator in FIELD_DECORATORS and field_name:
-                self._process_field_entity_decorations(decorator, entity_name, field_name, field_type, decorator_text)
+                self._process_field_entity_decorations(decorator, entity_name, field_name, decorator_text)
             elif decorator in ENTITY_DECORATORS:
                 self._process_entity_decorations(decorator, entity_name, decoration)
 
     
-    def _process_field_entity_decorations(self, decorator: str, entity_name: str, field_name: Optional[str], field_type: Optional[str], text: str):
+    def _process_field_entity_decorations(self, decorator: str, entity_name: str, field_name: Optional[str], text: str):
         # if there are multiple decorators, split and recurse
-        index = text[1:].find('@')
+        index = text.find('@')
         if index > -1:
             next_text = text[index:].strip()    # text for next decorator
             words = next_text.split(' ')        # get decorator name
-            text = text[:index]                # text for current decorator
-            self._process_field_entity_decorations(words[0], entity_name, field_name, field_type, next_text)
+            text = text[:index].strip()         # text for current decorator
+            next_text = next_text[len(words[0]):].strip()  # remove the decorator from the text
+            self._process_field_entity_decorations(words[0], entity_name, field_name, next_text)
         if decorator in [VALIDATE, UI]:
-            text = text[len(decorator):].strip()
-            self._add_field_data(decorator, entity_name, field_name, field_type, text)
+            # text = text[len(decorator):].strip()
+            self._add_field_data(decorator, entity_name, field_name, text)
         elif decorator == UNIQUE:
             self._add_unique(entity_name, field_name)
 
@@ -124,6 +126,32 @@ class Decorator:
             self._add_entity_decoration(decorator, entity_name, text)
         elif decorator == UNIQUE:
             self._add_unique(entity_name, text)
+        elif decorator == UI:
+            # handle all 5 forms of UI decorator at entity level - <entity>.*, <entity>.<field>, id, <field>, *
+            words = text.split(' ')
+            if words[0] == '{' or words[1] != '{': # This should always be false
+                print(f'*** Error: UI entity decorator for {entity_name} must include fields: {text}')
+                sys.exit(-1)
+            entity_defn = words[0].split('.')
+            # Process id field
+            if words[0] == 'id':
+                field = words[0]
+                fields = [field]
+            # check for named/inherited entity - if not it is the current entity
+            elif len(entity_defn) > 1:
+                fields = self._get_fields(entity_defn[0])
+                field = entity_defn[1]
+            else:
+                fields = self._get_fields(entity_name)  # use all fields for the current entity
+                field = words[0]
+
+            if field != '*' and field in fields:
+                fields = [field]
+
+            text = text[text.index('{'):]
+            for field in fields:
+                self._process_field_entity_decorations(UI, entity_name, field, text)
+
         elif decorator == OPERATION:
             operation = ''
             permissions = json5.loads(text)
@@ -135,8 +163,16 @@ class Decorator:
                 self._add_entity_decoration(decorator, entity_name, operation)
 
 
+    def _get_fields(self, entity_name: str) -> List[str]:
+        entity = self.entities.get(entity_name)
+        fields = []
+        for field, _ in entity.get('fields', {}).items():
+            fields.append(field)
+        return fields
+
+
     # Handles @validate and @ui
-    def _add_field_data(self, decorator, entity_name, field_name, field_type, text):
+    def _add_field_data(self, decorator, entity_name, field_name, text):
         # remove trailing comma for mutliple decorators on a line
         if text.endswith(','):
             text = text[:-1]
@@ -150,7 +186,8 @@ class Decorator:
             if isinstance(data, dict):
                 entity = self.entities[entity_name]
                 fields = entity['fields'] 
-                field = fields[field_name]
+                field =fields.setdefault(field_name, {})
+                # field = fields[field_name]
 
                 # UI Metadata goes in a subsection
                 if decorator == UI:
