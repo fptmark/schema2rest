@@ -1,6 +1,7 @@
 """
 Decorator handling module for processing MMD decorators
 """
+import copy
 import re
 import sys
 from typing import Dict, List, Tuple, Set, Any, Optional
@@ -10,7 +11,8 @@ import json5
 DICTIONARY = "@dictionary"
 UNIQUE = "@unique"
 VALIDATE = "@validate"
-INHERIT = "@inherit"
+ABSTRACT = "@abstract"
+INCLUDES = "@include"
 SERVICE = "@service"
 UI = "@ui"
 OPERATION = "@operations"
@@ -18,9 +20,13 @@ OPERATIONS = ["create", "read", "update", "delete"]
 
 # All supported decorators
 FIELD_DECORATORS = [UNIQUE, VALIDATE, UI]
-ENTITY_DECORATORS = [INHERIT, SERVICE, UNIQUE, OPERATION, UI]
-ALL_DECORATORS = FIELD_DECORATORS + ENTITY_DECORATORS #[DICTIONARY, UNIQUE, VALIDATE, INHERIT, SERVICE, UI]
+ENTITY_DECORATORS = [SERVICE, UNIQUE, OPERATION, UI, ABSTRACT, INCLUDES]
+ALL_DECORATORS = FIELD_DECORATORS + ENTITY_DECORATORS + [DICTIONARY]
 
+
+# Constants 
+FIELDS = 'fields'
+METADATA = 'ui_metadata'
 class Decorator:
     """
     Class to handle all decorator processing
@@ -122,7 +128,7 @@ class Decorator:
         """
         
         # Update entity based on decoration type
-        if decorator == INHERIT or decorator == SERVICE:
+        if decorator == ABSTRACT or decorator == INCLUDES or decorator == SERVICE:
             self._add_entity_decoration(decorator, entity_name, text)
         elif decorator == UNIQUE:
             self._add_unique(entity_name, text)
@@ -166,7 +172,7 @@ class Decorator:
     def _get_fields(self, entity_name: str) -> List[str]:
         entity = self.entities.get(entity_name)
         fields = []
-        for field, _ in entity.get('fields', {}).items():
+        for field, _ in entity.get(FIELDS, {}).items():
             fields.append(field)
         return fields
 
@@ -185,13 +191,12 @@ class Decorator:
         if decorator == VALIDATE or self._validatate_ui_attributes(data):
             if isinstance(data, dict):
                 entity = self.entities[entity_name]
-                fields = entity['fields'] 
+                fields = entity[FIELDS] 
                 field =fields.setdefault(field_name, {})
-                # field = fields[field_name]
 
                 # UI Metadata goes in a subsection
                 if decorator == UI:
-                    field.setdefault('ui_metadata', {}).update(data)
+                    field.setdefault(METADATA, {}).update(data)
                 else:
                     field.update(data)
 
@@ -204,7 +209,28 @@ class Decorator:
 
     def _add_entity_decoration(self, decorator, entity_name, value):
         entity = self.entities[entity_name] 
-        entity.setdefault(decorator[1:], []).append(value.strip())
+        if decorator == ABSTRACT:
+            entity['abstraction'] = True
+        elif decorator == INCLUDES:
+            # add a copy of the abstraction fields to the current entity.  set the displayAfterField so they all appear after the core entity fields
+            abstraction = self.entities.get(value)
+            if abstraction and FIELDS in abstraction:
+                fields_copy = copy.deepcopy(abstraction[FIELDS])
+
+                # set the display order - the included entity is after the core entity fields
+                # entity_names = list(entity[FIELDS].keys())
+                # prior_field = entity_names[-1]
+                prior_field = -1    # special naming for included entity fields
+                for field_name, field_value in fields_copy.items():
+                    field_value.setdefault(METADATA, {}).update({'displayAfterField': str(prior_field)})
+                    prior_field = prior_field - 1
+
+                entity.setdefault(FIELDS, []).update(fields_copy)
+            else:
+                print(f'*** Error: abstraction fields for {value} not found')
+                sys.exit(-1)
+        else:
+            entity.setdefault(decorator[1:], []).append(value.strip())
 
     # Handles dictionary
     def _process_dictionary(self, text: str):

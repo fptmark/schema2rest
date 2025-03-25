@@ -17,11 +17,17 @@ def quoted_str_representer(dumper, data):
 
 yaml.add_representer(QuotedStr, quoted_str_representer)
 
+# Avoid YAML aliases (anchors) in the output
+class NoAliasDumper(yaml.SafeDumper):
+    def ignore_aliases(self, data):
+        return True
+
 class SchemaParser:
     """Parser for MMD schema files"""
     
     def __init__(self):
         self.entities = {}
+        self.abstractions = {}
         self.relationships = []
         self.current_entity = None
     
@@ -133,30 +139,30 @@ def parse_mmd(lines):
 
 def extract_entities_metadata(entities):
     """
-    Extract services and inherited entities from the parsed entities
+    Extract services and included entities from the parsed entities
     
     Args:
         entities: Dictionary of parsed entities
         
     Returns:
-        Tuple of (services, inherits) sets
+        Tuple of (services, includes) sets
     """
     services = set()
-    inherits = set()
+    includes = set()
     
     for entity_name, entity_data in entities.items():
-        if "inherit" in entity_data:
-            for item in entity_data["inherit"]:
+        if "include" in entity_data:
+            for item in entity_data["include"]:
                 if isinstance(item, str):
-                    inherits.add(item)
+                    includes.add(item)
         if "service" in entity_data:
             for item in entity_data["service"]:
                 if isinstance(item, str):
                         services.add(item)
     
-    return services, inherits
+    return services, includes
 
-def generate_yaml_object(entities, relationships, dictionaries, services, inherits):
+def generate_yaml_object(entities, relationships, dictionaries, services, includes):
     """
     Generate the output object for YAML
     
@@ -165,7 +171,7 @@ def generate_yaml_object(entities, relationships, dictionaries, services, inheri
         relationships: List of (source, target) relationships
         dictionaries: Dictionary of dictionary definitions
         services: Set of services
-        inherits: Set of inherited entities
+        includes: Set of abstract entities
         
     Returns:
         Output object for YAML serialization
@@ -187,7 +193,7 @@ def generate_yaml_object(entities, relationships, dictionaries, services, inheri
         "_relationships": top_relationships,
         "_dictionaries": dictionaries,
         "_services": list(services),
-        "_inherited_entities": list(inherits),
+        "_included_entities": list(includes),
         "_entities": entities
     }
     
@@ -217,10 +223,10 @@ def convert_schema(schema_path, output_path):
         entities, relationships, dictionaries = parser.parse_mmd(schema_path)
         
         # Extract services and inherited entities
-        services, inherits = extract_entities_metadata(entities)
+        services, includes = extract_entities_metadata(entities)
         
         # Generate output object
-        output_obj = generate_yaml_object(entities, relationships, dictionaries, services, inherits)
+        output_obj = generate_yaml_object(entities, relationships, dictionaries, services, includes)
         
         # Determine output file path
         output_file = output_path
@@ -230,7 +236,7 @@ def convert_schema(schema_path, output_path):
         # Write YAML file
         print(f"Writing YAML to {output_file}")
         with open(output_file, 'w') as f:
-            yaml.dump(output_obj, f, sort_keys=False, default_flow_style=False)
+            yaml.dump(output_obj, f, sort_keys=False, default_flow_style=False, Dumper=NoAliasDumper)
         
         print(f"Schema conversion completed successfully")
         return True

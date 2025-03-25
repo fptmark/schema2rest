@@ -9,22 +9,22 @@ class Schema:
         self.metadata: dict[str, dict] = {}
         with open(schema_path, "r") as file:
             self.schema = yaml.safe_load(file)
-            self.extract_metadata() # move metadata from schema and return just the metadata
+            # self.extract_metadata() # move metadata from schema and return just the metadata
     
-    def extract_metadata(self):
-        self.metadata = {}
-        for entity_name, entity in self.schema.get("_entities", {}).items():
-            ui_fields = {}
-            fields = entity.get('fields', {})
-            for field_name, field_def in fields.items():
-                # If ui_metadata exists, pop it (remove from original) and add it to the ui-only dict.
-                if 'ui_metadata' in field_def:
-                    ui_fields[field_name] = {'ui_metadata': field_def.pop('ui_metadata')}
-            # Store the ui_metadata for the entity (if any)
-            self.metadata[entity_name] = {'fields': ui_fields}
+    # def extract_metadata(self):
+    #     self.metadata = {}
+    #     for entity_name, entity in self.schema.get("_entities", {}).items():
+    #         ui_fields = {}
+    #         fields = entity.get('fields', {})
+    #         for field_name, field_def in fields.items():
+    #             # If ui_metadata exists, pop it (remove from original) and add it to the ui-only dict.
+    #             if 'ui_metadata' in field_def:
+    #                 ui_fields[field_name] = {'ui_metadata': field_def.pop('ui_metadata')}
+    #         # Store the ui_metadata for the entity (if any)
+    #         self.metadata[entity_name] = {'fields': ui_fields}
 
-    def _get_metadata(self, entity_name: str, field_name: str) -> dict:
-        return self.metadata.get(entity_name, {}).get('fields', {}).get(field_name, {}) if self.metadata else {}
+    # def _get_metadata(self, entity_name: str, field_name: str) -> dict:
+    #     return self.metadata.get(entity_name, {}).get('fields', {}).get(field_name, {}) if self.metadata else {}
 
     def concrete_entities(self, reserved_types=RESERVED_TYPES) -> dict:
         entities = self.all_entities(reserved_types)
