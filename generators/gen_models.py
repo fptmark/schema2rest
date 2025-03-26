@@ -114,20 +114,30 @@ def extract_metadata(fields):
     Also generates any missing UI metadata with sensible defaults.
     """
     metadata = {}
-    # field_order = list(fields.keys())
-    
-    for i, (field_name, field_info) in enumerate(fields.items()):
-        # Start with core type info
-        field_meta = { }
-            # "type": field_info.get("type", "String"),
-        
-        # Set displayName (convert camelCase to Title Case if not specified)
-        # if "displayName" not in field_info:
-        #     display_name = ''.join(' ' + char if char.isupper() else char for char in field_name).strip()
-        #     field_meta["displayName"] = display_name.title()
-        # else:
-        #     field_meta["displayName"] = field_info.get("displayName")
-        
+    for field_name, field_value in fields.items():
+        field_metadata = {}
+        for key, value in field_value.items():
+            if key not in ['enum', 'ui_metadata']:
+                field_metadata[key] = value
+
+            elif key == 'ui_metadata':
+                field_metadata.update(value)
+
+            elif key == "enum":
+                field_metadata["options"] = value
+
+        # Set displayName (convert camelCase to Title Case if not specified) unless it was specified in the mmd/yaml
+        if "displayName" not in field_metadata:
+            display_name = ''.join(' ' + char if char.isupper() else char for char in field_name).strip()
+            if display_name.title() != field_name:
+                field_metadata["displayName"] = display_name.title()
+
+        metadata[field_name] = field_metadata
+
+    return metadata
+
+### ORIGINALLY in extract_metadata
+
         # # Set default display mode
         # if "display" not in field_info:
         #     # Hide password fields by default in read views
@@ -151,34 +161,6 @@ def extract_metadata(fields):
         # else:
         #     field_meta["widget"] = field_info.get("widget")
             
-        # Add required flag
-        # field_meta["required"] = field_info.get("required", False)
-        # if field_meta["type"] == "ISODdate":
-        #     field_meta["autoGenerate"] = field_info.get("autoGenerate", False)
-        #     field_meta["autoUpdate"] = field_info.get("autoUpdate", False)
-
-        # Insert base metadata
-        for key in ["type", "required", "placeholder", "helpText"]:
-            if key in field_info:
-                field_meta[key] = field_info[key]
-                
-        # Add additional UI metadata if present
-        ui = field_info.get("ui_metadata", None)
-        if ui:
-            field_meta.update(ui)
-
-        # Handle enum options
-        if "enum" in field_info:
-            field_meta["options"] = field_info["enum"]
-        
-        # Add validation constraints for UI validation
-        for key in ["minLength", "maxLength", "min", "max", "pattern"]:
-            if key in field_info:
-                field_meta[key] = field_info[key]
-        
-        metadata[field_name] = field_meta
-    
-    return metadata
 
 def combine_filter(dict1, dict2):
     new_dict = dict1.copy()
@@ -251,9 +233,10 @@ def generate_models(schema_file: str, path_root: str):
                 "type": "ObjectId", 
                 "required": True,
                 "displayName": f"{parent} ID",
-                "widget": "reference",
-                "display": "always",
-                "referenceEntity": parent
+                "readOnly": True,
+                # "widget": "reference",
+                # "display": "always",
+                # "referenceEntity": parent
             }
 
         # Process dictionary lookups.
