@@ -1,8 +1,10 @@
+import copy
 import yaml
 
 class Schema:
     
-    RESERVED_TYPES = { "ISODate", "ObjectId" }
+    # RESERVED_TYPES = { "ISODate", "ObjectId" }
+    RESERVED_TYPES: dict[str, str] = {}
     
     def __init__(self, schema_path: str):
         self.schema = {}
@@ -23,19 +25,20 @@ class Schema:
     #         # Store the ui_metadata for the entity (if any)
     #         self.metadata[entity_name] = {'fields': ui_fields}
 
-    # def _get_metadata(self, entity_name: str, field_name: str) -> dict:
-    #     return self.metadata.get(entity_name, {}).get('fields', {}).get(field_name, {}) if self.metadata else {}
+    def _get_metadata(self, entity_name: str, field_name: str) -> dict:
+        return self.metadata.get(entity_name, {}).get('fields', {}).get(field_name, {}) if self.metadata else {}
 
     def concrete_entities(self, reserved_types=RESERVED_TYPES) -> dict:
         entities = self.all_entities(reserved_types)
-        # Remove all inherited entities from concrete entities
-        for inherited in self.inherited_entities(reserved_types):
-            if inherited in entities:
-                del entities[inherited]
-        return entities
+        entities_copy = copy.deepcopy(entities)
+        # Remove all abstract entities
+        for name, obj in entities.items():
+            if obj.get('abstract', False):
+                del entities_copy[name]
+        return entities_copy
 
-    def inherited_entities(self, reserved_types=RESERVED_TYPES) -> dict:
-        return self.schema['_inherited_entities']
+    # def inherited_entities(self, reserved_types=RESERVED_TYPES) -> dict:
+    #     return self.schema['_inherited_entities']
 
     def all_entities(self, reserved_types=RESERVED_TYPES) -> dict:
         return self._get_attribute('_entities', reserved_types)

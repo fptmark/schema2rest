@@ -114,52 +114,59 @@ def extract_metadata(fields):
     Also generates any missing UI metadata with sensible defaults.
     """
     metadata = {}
-    field_order = list(fields.keys())
+    # field_order = list(fields.keys())
     
     for i, (field_name, field_info) in enumerate(fields.items()):
         # Start with core type info
-        field_meta = {
-            "type": field_info.get("type", "String"),
-        }
+        field_meta = { }
+            # "type": field_info.get("type", "String"),
         
         # Set displayName (convert camelCase to Title Case if not specified)
-        if "displayName" not in field_info:
-            display_name = ''.join(' ' + char if char.isupper() else char for char in field_name).strip()
-            field_meta["displayName"] = display_name.title()
-        else:
-            field_meta["displayName"] = field_info.get("displayName")
+        # if "displayName" not in field_info:
+        #     display_name = ''.join(' ' + char if char.isupper() else char for char in field_name).strip()
+        #     field_meta["displayName"] = display_name.title()
+        # else:
+        #     field_meta["displayName"] = field_info.get("displayName")
         
-        # Set default display mode
-        if "display" not in field_info:
-            # Hide password fields by default in read views
-            if field_name.lower().find("password") >= 0:
-                field_meta["display"] = "form"
-            else:
-                field_meta["display"] = "always"
-        else:
-            field_meta["display"] = field_info.get("display")
+        # # Set default display mode
+        # if "display" not in field_info:
+        #     # Hide password fields by default in read views
+        #     if field_name.lower().find("password") >= 0:
+        #         field_meta["display"] = "form"
+        #     else:
+        #         field_meta["display"] = "always"
+        # else:
+        #     field_meta["display"] = field_info.get("display")
         
-        # Set displayAfterField for proper field ordering
-        if "displayAfterField" not in field_info:
-            prev_field = field_order[i-1] if i > 0 else None
-            field_meta["displayAfterField"] = prev_field if prev_field else ""
-        else:
-            field_meta["displayAfterField"] = field_info.get("displayAfterField", "")
+        # # Set displayAfterField for proper field ordering
+        # if "displayAfterField" not in field_info:
+        #     prev_field = field_order[i-1] if i > 0 else None
+        #     field_meta["displayAfterField"] = prev_field if prev_field else ""
+        # else:
+        #     field_meta["displayAfterField"] = field_info.get("displayAfterField", "")
         
-        # Infer widget type if not explicitly set
-        if "widget" not in field_info:
-            field_meta["widget"] = infer_widget_type(field_info)
-        else:
-            field_meta["widget"] = field_info.get("widget")
+        # # Infer widget type if not explicitly set
+        # if "widget" not in field_info:
+        #     field_meta["widget"] = infer_widget_type(field_info)
+        # else:
+        #     field_meta["widget"] = field_info.get("widget")
             
         # Add required flag
-        field_meta["required"] = field_info.get("required", False)
-        
-        # Add additional UI metadata if present
-        for key in ["placeholder", "helpText", "readOnly"]:
+        # field_meta["required"] = field_info.get("required", False)
+        # if field_meta["type"] == "ISODdate":
+        #     field_meta["autoGenerate"] = field_info.get("autoGenerate", False)
+        #     field_meta["autoUpdate"] = field_info.get("autoUpdate", False)
+
+        # Insert base metadata
+        for key in ["type", "required", "placeholder", "helpText"]:
             if key in field_info:
                 field_meta[key] = field_info[key]
                 
+        # Add additional UI metadata if present
+        ui = field_info.get("ui_metadata", None)
+        if ui:
+            field_meta.update(ui)
+
         # Handle enum options
         if "enum" in field_info:
             field_meta["options"] = field_info["enum"]
@@ -218,7 +225,7 @@ def generate_models(schema_file: str, path_root: str):
     os.makedirs(metadata_dir, exist_ok=True)
 
     # Iterate over all entities dynamically (no special-case for any name)
-    for entity_name, entity_def in schema.all_entities().items():
+    for entity_name, entity_def in schema.concrete_entities().items():
         print(f"Generating model for {entity_name}...")
         raw_inherits = entity_def.get("inherits", [])
         processed_bases = []
@@ -273,9 +280,9 @@ def generate_models(schema_file: str, path_root: str):
         }
         
         # Write metadata to JSON file
-        metadata_file = os.path.join(metadata_dir, f"{entity_name.lower()}_metadata.json")
-        with open(metadata_file, "w") as mf:
-            json.dump(metadata, mf, indent=2)
+        # metadata_file = os.path.join(metadata_dir, f"{entity_name.lower()}_metadata.json")
+        # with open(metadata_file, "w") as mf:
+        #     json.dump(metadata, mf, indent=2)
         
         # Add metadata access to rendered model
         rendered_model = model_template.render(

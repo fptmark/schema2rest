@@ -78,6 +78,45 @@ schema2rest.py schema.yaml output_dir
 - Support for validation rules
 - Support for UI metadata
 
+## Decorators
+The system supports a set of custom decorators
+- @validate
+    Only allowed on a line where a field is defined and defines rules/messages/validations for an entity field
+            Ex.    String url %% @validate { required: true, pattern: "dictionary=pattern.url", "pattern.message": "Bad URL format" }
+
+- @service
+    Only allowed inside an entity defintion but not a field definition.  This is a service that the object will use to provide extended functionality
+            Ex.    %% @service auth.cookies.redis 
+
+- @abstract/@include
+    Only allowed inside an entity defintion but not a field definition.  @abstract specifieds that an entity is purely an abstraction and @include <abstraction> will imply
+    that the abstraction fields will be flattened into the entity
+        	Ex.    %% @abstract, @include <abstraction_name>
+
+- @unique
+    Allowed inside an entity definition either for a field or grouping of fields.  It specifies one (or more) criteria that must be unique
+        	Ex.    String username          %% @validate { required: true, minLength: 3, maxLength: 50 }, @ui { displayName: "User Name" }, @unique
+            Ex.    %% @unique name + userId # combo of name and userId are enforced to be unique
+    Note: True inheritance cannot be used due to conflicts with Pydantic inheritance
+
+- @ui
+    Allowed inside an entity definition or a field definition.  It defines the metadata used for displaying the field.  The first form is for an entity field being defined
+            Ex.    String firstName         %% @validate { required: true, minLength: 3, maxLength: 100 }, @ui { displayName: "Last Name" }
+    The second form is entity fields or from an included entity or "id"
+            Ex.    %% @ui <field> { display: "summary" } # add entity metadata for all BaseEntity fields in the metadata section - purely return in metadata
+
+- @operations
+    Only allowed inside an entity defintion but not a field definition.  This defines what operations the dashboard can perform on the entity
+                    %% @operations [ "read", "delete" ]
+
+- @dictionary
+    Must exists outside an entity definition.  Defines a dictionary of common strings/patterns such as a URL regex
+                    %% @dictionary pattern { email: "^[a-zA-Z0-9._%-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", url: "^https?://[^\s]+$" }
+    The first word is the name of the dictionary and each entry is a key in that dictionary.  The same dictionary can be extended by repeating the directive.
+    Values are used by referencing dictionary=pattern.url (dictionary=<dict name>.<key>) as shown in @validate above.
+
+
+
 ## UI Metadata
 
 The `@ui` decorator allows you to customize how fields are displayed in the user interface. Only explicitly defined UI attributes will be included in the YAML, while sensible defaults are generated in the model phase.
@@ -99,7 +138,7 @@ The `@ui` decorator allows you to customize how fields are displayed in the user
 The `display` attribute is a multi-value seperated by a vertical bar (|)
 - `all` or '' or missing - Display in all views (default)
 - `summary` - Display in inital summary view
-- `detail` - Display in detail views
+- `details` - Display in detail views
 - `form` - Display in edit forms
 - `hidden` - Do not show (must be display='hidden')
 
@@ -150,7 +189,7 @@ erDiagram
         String gender
         Boolean isAccountOwner
     }
-    %% @inherits BaseEntity
+    %% @include BaseEntity
     %% @validation User
     %% @unique username ### Note specified combined field indexes by "username + email"
     %% accountId: { type: ObjectId, required: true }

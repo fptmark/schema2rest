@@ -210,7 +210,7 @@ class Decorator:
     def _add_entity_decoration(self, decorator, entity_name, value):
         entity = self.entities[entity_name] 
         if decorator == ABSTRACT:
-            entity['abstraction'] = True
+            entity['abstract'] = True
         elif decorator == INCLUDES:
             # add a copy of the abstraction fields to the current entity.  set the displayAfterField so they all appear after the core entity fields
             abstraction = self.entities.get(value)
