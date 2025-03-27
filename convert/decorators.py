@@ -15,12 +15,13 @@ ABSTRACT = "@abstract"
 INCLUDES = "@include"
 SERVICE = "@service"
 UI = "@ui"
+LABELS = "@labels"
 OPERATION = "@operations"
 OPERATIONS = ["create", "read", "update", "delete"]
 
 # All supported decorators
 FIELD_DECORATORS = [UNIQUE, VALIDATE, UI]
-ENTITY_DECORATORS = [SERVICE, UNIQUE, OPERATION, UI, ABSTRACT, INCLUDES]
+ENTITY_DECORATORS = [SERVICE, UNIQUE, OPERATION, UI, ABSTRACT, INCLUDES, LABELS ]
 ALL_DECORATORS = FIELD_DECORATORS + ENTITY_DECORATORS + [DICTIONARY]
 
 
@@ -128,7 +129,7 @@ class Decorator:
         """
         
         # Update entity based on decoration type
-        if decorator == ABSTRACT or decorator == INCLUDES or decorator == SERVICE:
+        if decorator in [ ABSTRACT, INCLUDES, SERVICE, LABELS]:
             self._add_entity_decoration(decorator, entity_name, text)
         elif decorator == UNIQUE:
             self._add_unique(entity_name, text)
@@ -141,7 +142,7 @@ class Decorator:
             entity_defn = words[0].split('.')
             # Process id field
             if words[0] == 'id':
-                field = words[0]
+                field = "_id"
                 fields = [field]
             # check for named/inherited entity - if not it is the current entity
             elif len(entity_defn) > 1:
@@ -150,9 +151,6 @@ class Decorator:
             else:
                 fields = self._get_fields(entity_name)  # use all fields for the current entity
                 field = words[0]
-
-            if field != '*' and field in fields:
-                fields = [field]
 
             text = text[text.index('{'):]
             for field in fields:
@@ -211,6 +209,9 @@ class Decorator:
         entity = self.entities[entity_name] 
         if decorator == ABSTRACT:
             entity['abstract'] = True
+        elif decorator == LABELS:
+            value = json5.loads(value)
+            entity.setdefault('labels', {}).update(value)
         elif decorator == INCLUDES:
             # add a copy of the abstraction fields to the current entity.  set the displayAfterField so they all appear after the core entity fields
             abstraction = self.entities.get(value)
@@ -269,7 +270,8 @@ class Decorator:
             "placeholder": [],
             "helpText": [],
             "readOnly": [],
-            "displayAfterField": []
+            "displayAfterField": [],
+            "displayPages": [],
         }
 
         for key, value in attributes.items():

@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import traceback
 import yaml
 import os
 from typing import Dict, Set, Any, List, Tuple
@@ -243,6 +244,7 @@ def convert_schema(schema_path, output_path):
     
     except Exception as e:
         print(f"Error converting schema: {str(e)}")
+        traceback.print_exc()
         return False
 
 def main():
@@ -271,4 +273,4 @@ def main():
 
 if __name__ == "__main__":
     ret = main()
-    sys.exit(ret)
+    # sys.exit(ret)

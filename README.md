@@ -109,6 +109,11 @@ The system supports a set of custom decorators
     Only allowed inside an entity defintion but not a field definition.  This defines what operations the dashboard can perform on the entity
                     %% @operations [ "read", "delete" ]
 
+- @labels
+    Only allowed inside an entity defintion but not a field definition.  This defines what labels will be shown
+                    %% @labels { title: "Accounts", buttonLabel: "Manage Accounts", description: "Manage Accounts" }
+        Note: by default, title will be the entity name.  Any empty field will inherit the prior field's value in the above order
+
 - @dictionary
     Must exists outside an entity definition.  Defines a dictionary of common strings/patterns such as a URL regex
                     %% @dictionary pattern { email: "^[a-zA-Z0-9._%-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", url: "^https?://[^\s]+$" }
@@ -126,16 +131,18 @@ The `@ui` decorator allows you to customize how fields are displayed in the user
 | Attribute | Description | Example | Default |
 |-----------|-------------|---------|---------|
 | `displayName` | Human-readable name for the field | `@ui firstName { displayName: "First Name" }` | Converted from camelCase to Title Case |
-| `display` | When to display the field | `@ui password { display: "form" }` | "always" (except passwords are "form") |
+| `displayPages` | When to display the field | `@ui password { display: "form" }` | "always" 
+| `display` | Display attributes '' or hidden or secret | `@ui password { display: "secret" }` | "always" 
 | `widget` | UI control type | `@ui email { widget: "email" }` | Inferred from field type and validation |
 | `placeholder` | Placeholder text | `@ui email { placeholder: "example@domain.com" }` | None |
 | `helpText` | Helper text shown below the field | `@ui password { helpText: "Min 8 characters" }` | None |
 | `readOnly` | Whether field is read-only | `@ui createdAt { readOnly: true }` | false |
 | `displayAfterField` | Field to display after (for ordering) | `@ui lastName { displayAfterField: "firstName" }` | Previous field name |
+| `suppress` | Do not display the contents by default | `@ui lastName { suppress: true }` 
 
 ### Display Modes
 
-The `display` attribute is a multi-value seperated by a vertical bar (|)
+The `displayPages` attribute is a multi-value seperated by a vertical bar (|)
 - `all` or '' or missing - Display in all views (default)
 - `summary` - Display in inital summary view
 - `details` - Display in detail views

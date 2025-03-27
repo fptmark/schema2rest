@@ -203,8 +203,8 @@ def generate_models(schema_file: str, path_root: str):
     os.makedirs(models_dir, exist_ok=True)
     
     # Create a metadata directory to store the UI metadata
-    metadata_dir = os.path.join(path_root, "app", "metadata")
-    os.makedirs(metadata_dir, exist_ok=True)
+    # metadata_dir = os.path.join(path_root, "app", "metadata")
+    # os.makedirs(metadata_dir, exist_ok=True)
 
     # Iterate over all entities dynamically (no special-case for any name)
     for entity_name, entity_def in schema.concrete_entities().items():
@@ -258,8 +258,9 @@ def generate_models(schema_file: str, path_root: str):
         # Extract metadata for this entity
         metadata = {
             "entity": entity_name,
-            "displayName": entity_def.get("displayName", entity_name),
-            "fields": extract_metadata(fields)
+            "labels": entity_def.get("labels", entity_name),
+            "operations": entity_def.get("operations", ''),
+            "fields": extract_metadata(fields),
         }
         
         # Write metadata to JSON file
