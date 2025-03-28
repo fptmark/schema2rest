@@ -12,6 +12,8 @@ from app.services.{{ service }} import {{ tokens[1]|capitalize }}{{ tokens[0]|ca
 {# --- Dynamic Import of Route Routers for Entities --- #}
 {% for entity in entities %}
 from app.routes.{{ entity|lower }}_router import router as {{ entity|lower }}_router
+from app.models.{{ entity|lower }}_model import {{ entity }}
+
 {% endfor %}
 
 import logging
@@ -67,6 +69,15 @@ app.include_router({{ entity|lower }}_router, prefix='/api/{{ entity|lower }}', 
 @app.get('/')
 def read_root():
     return {'message': 'Welcome to the Event Management System'}
+
+@app.get('/api/entities')
+def get_entities_metadata():
+    result = [
+{% for entity in entities %}
+        {{ entity }}.get_metadata(),     
+{% endfor %}
+    ]
+    return result
 
 if __name__ == '__main__':
     import uvicorn
