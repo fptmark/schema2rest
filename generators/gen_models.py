@@ -127,10 +127,10 @@ def extract_metadata(fields):
                 field_metadata["options"] = value
 
         # Set displayName (convert camelCase to Title Case if not specified) unless it was specified in the mmd/yaml
-        if "displayName" not in field_metadata:
-            display_name = ''.join(' ' + char if char.isupper() else char for char in field_name).strip()
-            if display_name.title() != field_name:
-                field_metadata["displayName"] = display_name.title()
+        # if "displayName" not in field_metadata:
+        #     display_name = ''.join(' ' + char if char.isupper() else char for char in field_name).strip()
+        #     if display_name.title() != field_name:
+        #         field_metadata["displayName"] = display_name.title()
 
         metadata[field_name] = field_metadata
 
@@ -258,7 +258,7 @@ def generate_models(schema_file: str, path_root: str):
         # Extract metadata for this entity
         metadata = {
             "entity": entity_name,
-            "labels": entity_def.get("labels", entity_name),
+            "ui": entity_def.get("ui", entity_name),
             "operations": entity_def.get("operations", ''),
             "fields": extract_metadata(fields),
         }
