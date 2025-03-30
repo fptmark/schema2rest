@@ -79,6 +79,17 @@ schema2rest.py schema.yaml output_dir
 - Support for UI metadata
 
 ## Decorators
+Supported decorators
+| Entity    | Notes                || Field    | Notes        |
+|-----------|----------------------||----------|--------------|
+| ui        | Define entity labels || ui       |              | 
+| unique    | Multi field rule     || unique   | single field |
+| service   |                      || validate |              | 
+| operations| CRUD                 ||          |              | 
+| abstract  | abstract entity      ||          |              | 
+| include   | use/copy abstract    ||          |              | 
+
+
 The system supports a set of custom decorators
 - @validate
     Only allowed on a line where a field is defined and defines rules/messages/validations for an entity field
@@ -104,15 +115,13 @@ The system supports a set of custom decorators
             Ex.    String firstName         %% @validate { required: true, minLength: 3, maxLength: 100 }, @ui { displayName: "Last Name" }
     The second form is entity fields or from an included entity or "id"
             Ex.    %% @ui <field> { display: "summary" } # add entity metadata for all BaseEntity fields in the metadata section - purely return in metadata
+    A third form is for entity level elements.  The dashboard has 3 labels (title, buttonLabel and description).  By default the title will be
+            the entity name.  Any missing value in the above list of labels will use the prior value
+            Ex.    %% @ui { title: 'xxx', 'Manage XXX', 'Manage the tags/data for XXX'}
 
 - @operations
     Only allowed inside an entity defintion but not a field definition.  This defines what operations the dashboard can perform on the entity
                     %% @operations [ "read", "delete" ]
-
-- @labels
-    Only allowed inside an entity defintion but not a field definition.  This defines what labels will be shown
-                    %% @labels { title: "Accounts", buttonLabel: "Manage Accounts", description: "Manage Accounts" }
-        Note: by default, title will be the entity name.  Any empty field will inherit the prior field's value in the above order
 
 - @dictionary
     Must exists outside an entity definition.  Defines a dictionary of common strings/patterns such as a URL regex

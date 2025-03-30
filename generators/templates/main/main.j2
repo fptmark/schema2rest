@@ -77,7 +77,10 @@ def get_entities_metadata():
         {{ entity }}.get_metadata(),     
 {% endfor %}
     ]
-    return result
+    r1 = copy.deepcopy(result)
+    for r in r1:
+        r.pop('fields')
+    return r1
 
 if __name__ == '__main__':
     import uvicorn
