@@ -41,7 +41,6 @@ def model_field_filter(field_data: dict) -> str:
     # Check for autoGenerate or autoUpdate flags.
     if field_data.get('autoGenerate', False) or field_data.get('autoUpdate', False):
         # For ISODate, we'll use datetime.now(timezone.utc) as the default factory.
-        # You could add additional logic here for other types.
         default_str = "Field(default_factory=lambda: datetime.now(timezone.utc))"
         base_type = py_type  # Even if required is true, we supply a default.
     else:
@@ -61,10 +60,21 @@ def model_field_filter(field_data: dict) -> str:
             field_params.append(f"min_length={field_data['minLength']}")
         if 'maxLength' in field_data and 'maxLength.message' not in field_data:
             field_params.append(f"max_length={field_data['maxLength']}")
-        if 'pattern' in field_data and 'pattern.message' not in field_data:
-            field_params.append(f"regex=r'{field_data['pattern']}'")
+        # Updated pattern handling: extract only the regex if a mapping is provided.
+        if 'pattern' in field_data:
+            pattern_val = field_data['pattern']
+            if isinstance(pattern_val, dict):
+                values = pattern_val.get("regex")
+                field_params.append(f"regex=r\"{values}\"")
+            else:
+                field_params.append(f"regex=r'{pattern_val}'")
+        # Updated enum handling: extract allowed values for the description.
         if 'enum' in field_data:
-            field_params.append(f"description=\"Allowed values: {field_data['enum']}\"")
+            enum_val = field_data['enum']
+            if isinstance(enum_val, dict):
+                field_params.append(f"description=\"Allowed values: {enum_val.get('values')}\"")
+            else:
+                field_params.append(f"description=\"Allowed values: {enum_val}\"")
         if 'min' in field_data:
             field_params.append(f"ge={field_data['min']}")
         if 'max' in field_data:
@@ -119,48 +129,14 @@ def extract_metadata(fields):
         for key, value in field_value.items():
             if key not in ['enum', 'ui_metadata']:
                 field_metadata[key] = value
-
             elif key == 'ui_metadata':
                 field_metadata.update(value)
-
             elif key == "enum":
                 field_metadata["options"] = value
-
-        # Set displayName (convert camelCase to Title Case if not specified) unless it was specified in the mmd/yaml
-        # if "displayName" not in field_metadata:
-        #     display_name = ''.join(' ' + char if char.isupper() else char for char in field_name).strip()
-        #     if display_name.title() != field_name:
-        #         field_metadata["displayName"] = display_name.title()
 
         metadata[field_name] = field_metadata
 
     return metadata
-
-### ORIGINALLY in extract_metadata
-
-        # # Set default display mode
-        # if "display" not in field_info:
-        #     # Hide password fields by default in read views
-        #     if field_name.lower().find("password") >= 0:
-        #         field_meta["display"] = "form"
-        #     else:
-        #         field_meta["display"] = "always"
-        # else:
-        #     field_meta["display"] = field_info.get("display")
-        
-        # # Set displayAfterField for proper field ordering
-        # if "displayAfterField" not in field_info:
-        #     prev_field = field_order[i-1] if i > 0 else None
-        #     field_meta["displayAfterField"] = prev_field if prev_field else ""
-        # else:
-        #     field_meta["displayAfterField"] = field_info.get("displayAfterField", "")
-        
-        # # Infer widget type if not explicitly set
-        # if "widget" not in field_info:
-        #     field_meta["widget"] = infer_widget_type(field_info)
-        # else:
-        #     field_meta["widget"] = field_info.get("widget")
-            
 
 def combine_filter(dict1, dict2):
     new_dict = dict1.copy()
@@ -202,10 +178,6 @@ def generate_models(schema_file: str, path_root: str):
 
     os.makedirs(models_dir, exist_ok=True)
     
-    # Create a metadata directory to store the UI metadata
-    # metadata_dir = os.path.join(path_root, "app", "metadata")
-    # os.makedirs(metadata_dir, exist_ok=True)
-
     # Iterate over all entities dynamically (no special-case for any name)
     for entity_name, entity_def in schema.concrete_entities().items():
         print(f"Generating model for {entity_name}...")
@@ -226,7 +198,7 @@ def generate_models(schema_file: str, path_root: str):
 
         fields = entity_def.get("fields", {})
 
-        # Examine relationships for this entity to find foreign key and auto add it's id to fields
+        # Examine relationships for this entity to find foreign key and auto add its id to fields
         for parent in get_parents(entity_name, schema):
             parent_id_field = f"{parent.lower()}Id"
             fields[parent_id_field] = { 
@@ -234,9 +206,6 @@ def generate_models(schema_file: str, path_root: str):
                 "required": True,
                 "displayName": f"{parent} ID",
                 "readOnly": True,
-                # "widget": "reference",
-                # "display": "always",
-                # "referenceEntity": parent
             }
 
         # Process dictionary lookups.
@@ -244,7 +213,6 @@ def generate_models(schema_file: str, path_root: str):
             for attribute, value in attributes.items():
                 if isinstance(value, str) and value.startswith(DICTIONARY_KEY):
                     value = value[len(DICTIONARY_KEY):]
-                    # Update the attribute with the looked-up value
                     fields[field][attribute] = get_dictionary_value(schema.dictionaries(), value)
 
         uniques = entity_def.get("uniques", [])
@@ -263,12 +231,6 @@ def generate_models(schema_file: str, path_root: str):
             "fields": extract_metadata(fields),
         }
         
-        # Write metadata to JSON file
-        # metadata_file = os.path.join(metadata_dir, f"{entity_name.lower()}_metadata.json")
-        # with open(metadata_file, "w") as mf:
-        #     json.dump(metadata, mf, indent=2)
-        
-        # Add metadata access to rendered model
         rendered_model = model_template.render(
             entity=entity_name,
             fields=fields,

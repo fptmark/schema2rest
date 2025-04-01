@@ -30,8 +30,17 @@
                 {% endif %}
             {% endif %}
             {% if field_info.get('pattern') is not none %}
-        if v is not None and not re.match(r'{{ field_info.get("pattern") }}', v):
-                {% if ns.messages.get('pattern') is not none %}
+                {% if field_info.get('pattern') is mapping %}
+                    {% set regex_pattern = field_info.get('pattern').get('regex') %}
+                    {% set pattern_message = field_info.get('pattern').get('message') %}
+                {% else %}
+                    {% set regex_pattern = field_info.get('pattern') %}
+                    {% set pattern_message = None %}
+                {% endif %}
+        if v is not None and not re.match(r'{{ regex_pattern }}', v):
+                {% if pattern_message %}
+            raise ValueError("{{ pattern_message }}")
+                {% elif ns.messages.get('pattern') is not none %}
             raise ValueError(_custom["pattern"])
                 {% else %}
             raise ValueError("{{ field_name }} is not in the correct format")
@@ -39,9 +48,18 @@
             {% endif %}
         {% endif %}
         {% if field_info.get('enum') is not none %}
-        allowed = {{ field_info.get('enum')|tojson }}
+                {% if field_info.get('enum') is mapping %}
+                    {% set allowed_values = field_info.get('enum').get('values') %}
+                    {% set enum_message = field_info.get('enum').get('message') %}
+                {% else %}
+                    {% set allowed_values = field_info.get('enum') %}
+                    {% set enum_message = None %}
+                {% endif %}
+        allowed = {{ allowed_values|tojson }}
         if v is not None and v not in allowed:
-            {% if ns.messages.get('enum') is not none %}
+            {% if enum_message %}
+            raise ValueError("{{ enum_message }}")
+            {% elif ns.messages.get('enum') is not none %}
             raise ValueError(_custom["enum"])
             {% else %}
             raise ValueError("{{ field_name }} must be one of " + ", ".join(allowed))
