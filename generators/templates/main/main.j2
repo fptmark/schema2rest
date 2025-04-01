@@ -72,15 +72,11 @@ def read_root():
 
 @app.get('/api/entities')
 def get_entities_metadata():
-    result = [
+    return [
 {% for entity in entities %}
         {{ entity }}.get_metadata(),     
 {% endfor %}
     ]
-    r1 = copy.deepcopy(result)
-    for r in r1:
-        r.pop('fields')
-    return r1
 
 if __name__ == '__main__':
     import uvicorn

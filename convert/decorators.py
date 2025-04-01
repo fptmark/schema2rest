@@ -187,6 +187,13 @@ class Decorator:
             sys.exit(-1)
         if decorator == VALIDATE or self._validatate_ui_attributes(data):
             if isinstance(data, dict):
+                # Handle dictioary lookup - do it in gen_models instead
+                # if 'pattern' in data and 'regex' in data['pattern']:
+                #     regex = data['pattern']['regex']
+                #     if regex.startswith("dictionary="):
+                #         words = regex.split('=')[1].split('.')
+                #         data['pattern']['regex'] = self.dictionaries[words[0]][words[1]]
+
                 entity = self.entities[entity_name]
                 fields = entity[FIELDS] 
                 field =fields.setdefault(field_name, {})
