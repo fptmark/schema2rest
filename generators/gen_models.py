@@ -65,6 +65,8 @@ def model_field_filter(field_data: dict) -> str:
             pattern_val = field_data['pattern']
             if isinstance(pattern_val, dict):
                 values = pattern_val.get("regex")
+                if values and values.startswith(DICTIONARY_KEY):
+                    values = get_dictionary_value(values[len(DICTIONARY_KEY):])   
                 field_params.append(f"regex=r\"{values}\"")
             else:
                 field_params.append(f"regex=r'{pattern_val}'")
@@ -132,7 +134,7 @@ def extract_metadata(fields):
             elif key == 'ui_metadata':
                 field_metadata.update(value)
             elif key == "enum":
-                field_metadata["options"] = value
+                field_metadata[key] = value
 
         metadata[field_name] = field_metadata
 
@@ -163,10 +165,9 @@ def get_jinja_env() -> Environment:
 ############################
 # MODEL GENERATION
 ############################
-def generate_models(schema_file: str, path_root: str):
+def generate_models(path_root: str):
     print("Generating models...")
     models_dir = os.path.join(path_root, "app", "models")
-    schema = Schema(schema_file)
     env = get_jinja_env()
     env.filters['model_field'] = model_field_filter
 
@@ -255,11 +256,10 @@ def get_parents(child_name, schema):
                 parents.append(entity_name)
     return parents
 
-def get_dictionary_value(dictionaries, value):
+def get_dictionary_value(value):
     words = value.split('.')
-    if dictionaries.get(words[0]):
-        return dictionaries[words[0]].get(words[1], value)
-    return value
+    d = schema.dictionaries()
+    return schema.dictionaries().get(words[0], {}).get(words[1], value)
 
 Valid_Attribute_Messages = ["minLength.message", "maxLength.message", "pattern.message", "enum.message"]
 def valid_message_fields(fields):
@@ -274,6 +274,6 @@ if __name__ == "__main__":
     if len(sys.argv) != 3:
         print("Usage: python gen_models.py <schema.yaml> <path_root>")
         sys.exit(1)
-    schema_file = sys.argv[1]
+    schema = Schema(sys.argv[1])
     path_root = sys.argv[2]
-    generate_models(schema_file, path_root)
+    generate_models(path_root)
