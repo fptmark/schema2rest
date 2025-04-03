@@ -70,7 +70,7 @@ app.include_router({{ entity|lower }}_router, prefix='/api/{{ entity|lower }}', 
 def read_root():
     return {'message': 'Welcome to the Event Management System'}
 
-@app.get('/api/entities')
+@app.get('/api/metadata')
 def get_entities_metadata():
     return [
 {% for entity in entities %}
