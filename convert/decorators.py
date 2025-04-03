@@ -147,7 +147,7 @@ class Decorator:
             self._add_unique(entity_name, text)
 
         elif decorator == OPERATION:
-            operation = ''
+            operation: str = ''
             permissions = json5.loads(text)
             if isinstance(permissions, list):
                 for elem in permissions:
@@ -236,6 +236,8 @@ class Decorator:
         elif decorator == UI:
             data = json5.loads(value)
             entity.setdefault(UI_METADATA, {}).update(data)
+        elif decorator == OPERATION:
+            entity.setdefault(decorator[1:], value.strip())
         else:
             entity.setdefault(decorator[1:], []).append(value.strip())
 
