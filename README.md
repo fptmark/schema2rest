@@ -140,14 +140,15 @@ The `@ui` decorator allows you to customize how fields are displayed in the user
 | Attribute | Description | Example | Default |
 |-----------|-------------|---------|---------|
 | `displayName` | Human-readable name for the field | `@ui firstName { displayName: "First Name" }` | Converted from camelCase to Title Case |
-| `displayPages` | When to display the field | `@ui password { display: "form" }` | "always" 
+| `displayPages` | When to display the field | `@ui password { displayPages: "summary|form" }`.  
 | `display` | Display attributes '' or hidden or secret | `@ui password { display: "secret" }` | "always" 
 | `widget` | UI control type | `@ui email { widget: "email" }` | Inferred from field type and validation |
 | `placeholder` | Placeholder text | `@ui email { placeholder: "example@domain.com" }` | None |
 | `helpText` | Helper text shown below the field | `@ui password { helpText: "Min 8 characters" }` | None |
 | `readOnly` | Whether field is read-only | `@ui createdAt { readOnly: true }` | false |
 | `displayAfterField` | Field to display after (for ordering) | `@ui lastName { displayAfterField: "firstName" }` | Previous field name |
-| `suppress` | Do not display the contents by default | `@ui lastName { suppress: true }` 
+| `secret` | Do not display the contents by default such as password
+| `link` | display a link | entities/account/${value}
 
 ### Display Modes
 
@@ -156,7 +157,7 @@ The `displayPages` attribute is a multi-value seperated by a vertical bar (|)
 - `summary` - Display in inital summary view
 - `details` - Display in detail views
 - `form` - Display in edit forms
-- `hidden` - Do not show (must be display='hidden')
+- `none` - Do not show 
 
 
 ### Widget Types

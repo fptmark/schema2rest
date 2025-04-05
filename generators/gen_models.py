@@ -199,22 +199,22 @@ def generate_models(path_root: str):
 
         fields = entity_def.get("fields", {})
 
-        # Examine relationships for this entity to find foreign key and auto add its id to fields
-        for parent in get_parents(entity_name, schema):
-            parent_id_field = f"{parent.lower()}Id"
-            fields[parent_id_field] = { 
-                "type": "ObjectId", 
-                "required": True,
-                "displayName": f"{parent} ID",
-                "readOnly": True,
-            }
+        # Examine relationships for this entity to find foreign key and auto add its id to fields - now handled in schemaConvert
+        # for parent in get_parents(entity_name, schema):
+        #     parent_id_field = f"{parent.lower()}Id"
+        #     fields[parent_id_field] = { 
+        #         "type": "ObjectId", 
+        #         "required": True,
+        #         "displayName": f"{parent} ID",
+        #         "readOnly": True,
+        #     }
 
         # Process dictionary lookups.
         for field, attributes in fields.items():
             for attribute, value in attributes.items():
                 if isinstance(value, str) and value.startswith(DICTIONARY_KEY):
                     value = value[len(DICTIONARY_KEY):]
-                    fields[field][attribute] = get_dictionary_value(schema.dictionaries(), value)
+                    fields[field][attribute] = get_dictionary_value(value)
 
         uniques = entity_def.get("uniques", [])
         
@@ -258,7 +258,6 @@ def get_parents(child_name, schema):
 
 def get_dictionary_value(value):
     words = value.split('.')
-    d = schema.dictionaries()
     return schema.dictionaries().get(words[0], {}).get(words[1], value)
 
 Valid_Attribute_Messages = ["minLength.message", "maxLength.message", "pattern.message", "enum.message"]
