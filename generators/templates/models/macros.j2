@@ -3,14 +3,16 @@
 {# Macro for generating field definitions #}
 {% macro field_declarations(fields) %}
 {% for field_name, field_info in fields.items() %}
-    {{ field_name }}: {{ field_info|model_field }}
+    {% set type_str, field_init = field_info | model_field %}
+    {{ field_name }}: {{ type_str }} = {{ field_init }}
 {% endfor %}
 {% endmacro %}
 
 {# Macro for generating optional field definitions (for Read models) #}
 {% macro optional_field_declarations(fields) %}
 {% for field_name, field_info in fields.items() %}
-    {{ field_name }}: {{ field_info|model_field|replace("= Field(...", "= Field(None") }}
+    {% set type_str, field_init = field_info | model_field %}
+    {{ field_name }}: Optional[{{ type_str }}] = {{ field_init | replace("Field(...", "Field(None") }}
 {% endfor %}
 {% endmacro %}
 

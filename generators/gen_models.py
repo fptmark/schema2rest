@@ -14,79 +14,73 @@ DICTIONARY_KEY = "dictionary="
 ############################
 # CUSTOM FILTER
 ############################
-def model_field_filter(field_data: dict) -> str:
-    """
-    Convert a dict of validations into a Python type annotation for Pydantic.
-    It now checks for autoGenerate/autoUpdate flags to produce a default_factory.
-    """
+def model_field_filter(field_data):
+    base_type = "Any"
+    default = "..."
+    field_params = []
+
+    field_type = field_data.get('type', 'String')
+    required = field_data.get('required', True)
+
+    if not required:
+        default = "None"
+
+    # Map YAML types to Python types
     type_map = {
         'String': 'str',
-        'Boolean': 'bool',
-        'Number': 'float',
         'Integer': 'int',
+        'Number': 'float',
+        'Boolean': 'bool',
         'ISODate': 'datetime',
-        'ObjectId': 'PydanticObjectId',  # Use Beanie's type
-        'JSON': 'dict',
+        'ObjectId': 'PydanticObjectId',
         'Array[String]': 'List[str]',
-        'Array[Integer]': 'List[int]',
-        'Array[Number]': 'List[float]',
-        'Array[Boolean]': 'List[bool]',
-        'Array[ISODate]': 'List[datetime]',
-        'Array[ObjectId]': 'List[PydanticObjectId]',
-        'Array[JSON]': 'List[dict]'
+        'JSON': 'dict',
     }
-    field_type = field_data.get('type', 'String')
-    py_type = type_map.get(field_type, 'str')
 
-    # Check for autoGenerate or autoUpdate flags.
-    if field_data.get('autoGenerate', False) or field_data.get('autoUpdate', False):
-        # For ISODate, we'll use datetime.now(timezone.utc) as the default factory.
-        default_str = "Field(default_factory=lambda: datetime.now(timezone.utc))"
-        base_type = py_type  # Even if required is true, we supply a default.
-    else:
-        required_val = field_data.get('required', False)
-        if isinstance(required_val, str):
-            required_val = (required_val.lower() == 'true')
-    
-        if required_val:
-            base_type = py_type
-            default_str = "Field(..."
-        else:
-            base_type = f"Optional[{py_type}]"
-            default_str = "Field(None"
-    
-        field_params = []
-        if 'minLength' in field_data and 'minLength.message' not in field_data:
+    base_type = type_map.get(field_type, 'Any')
+
+    if field_type == 'ISODate':
+        if field_data.get('autoGenerate') or field_data.get('autoUpdate'):
+            default = "default_factory=lambda: datetime.now(timezone.utc)"
+
+    if field_type == 'Array[String]':
+        base_type = 'Optional[List[str]]' if not required else 'List[str]'
+
+    # Field constraints
+    if field_type in ['String', 'str']:
+        if 'minLength' in field_data:
             field_params.append(f"min_length={field_data['minLength']}")
-        if 'maxLength' in field_data and 'maxLength.message' not in field_data:
+        if 'maxLength' in field_data:
             field_params.append(f"max_length={field_data['maxLength']}")
-        # Updated pattern handling: extract only the regex if a mapping is provided.
-        if 'pattern' in field_data:
-            pattern_val = field_data['pattern']
-            if isinstance(pattern_val, dict):
-                values = pattern_val.get("regex")
-                if values and values.startswith(DICTIONARY_KEY):
-                    values = get_dictionary_value(values[len(DICTIONARY_KEY):])   
-                field_params.append(f"regex=r\"{values}\"")
-            else:
-                field_params.append(f"regex=r'{pattern_val}'")
-        # Updated enum handling: extract allowed values for the description.
-        if 'enum' in field_data:
-            enum_val = field_data['enum']
-            if isinstance(enum_val, dict):
-                field_params.append(f"description=\"Allowed values: {enum_val.get('values')}\"")
-            else:
-                field_params.append(f"description=\"Allowed values: {enum_val}\"")
-        if 'min' in field_data:
-            field_params.append(f"ge={field_data['min']}")
-        if 'max' in field_data:
-            field_params.append(f"le={field_data['max']}")
-    
-        if field_params:
-            default_str += ", " + ", ".join(field_params)
-        default_str += ")"
-    
-    return f"{base_type} = {default_str}"
+    if 'pattern' in field_data:
+        pattern_val = field_data['pattern']
+        if isinstance(pattern_val, dict):
+            regex = pattern_val.get("regex")
+            if regex and regex.startswith("dictionary="):
+                resolved = get_dictionary_value(regex[len("dictionary="):])
+                if resolved:
+                    field_data['pattern']['regex'] = resolved
+                    regex = resolved
+            field_params.append(f"regex=r\"{regex}\"")
+        else:
+            field_params.append(f"regex=r'{pattern_val}'")
+    if 'enum' in field_data:
+        enum_val = field_data['enum']
+        if isinstance(enum_val, dict):
+            field_params.append(f"description=\"Allowed values: {enum_val.get('values')}\"")
+        else:
+            field_params.append(f"description=\"Allowed values: {enum_val}\"")
+    if 'min' in field_data:
+        field_params.append(f"ge={field_data['min']}")
+    if 'max' in field_data:
+        field_params.append(f"le={field_data['max']}")
+
+    param_str = ", ".join(field_params)
+    field_code = f"Field({default}{', ' + param_str if param_str else ''})"
+
+    # Just return the Field(...) code
+    return base_type, field_code
+
 
 def infer_widget_type(field_info):
     """
@@ -210,11 +204,11 @@ def generate_models(path_root: str):
         #     }
 
         # Process dictionary lookups.
-        for field, attributes in fields.items():
-            for attribute, value in attributes.items():
-                if isinstance(value, str) and value.startswith(DICTIONARY_KEY):
-                    value = value[len(DICTIONARY_KEY):]
-                    fields[field][attribute] = get_dictionary_value(value)
+        # for field, attributes in fields.items():
+        #     for attribute, value in attributes.items():
+        #         if isinstance(value, str) and value.startswith(DICTIONARY_KEY):
+        #             value = value[len(DICTIONARY_KEY):]
+        #             fields[field][attribute] = get_dictionary_value(value)
 
         uniques = entity_def.get("uniques", [])
         
