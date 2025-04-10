@@ -44,7 +44,7 @@ class {{ entity }}Create(BaseModel):
 
 class {{ entity }}Read(BaseModel):
     # Fields for read operations
-    id: Optional[PydanticObjectId] = Field(alias="_id")
+    id: PydanticObjectId = Field(alias="_id")
 {{ macros.optional_field_declarations(fields) }}
 {{ macros.orm_config(true) }}
 
