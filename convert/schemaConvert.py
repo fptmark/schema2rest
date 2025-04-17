@@ -88,8 +88,8 @@ class SchemaParser:
 
                 # Auto add a foreign key into each entity based on a relationship 
                 entity = self.entities[target]
-                entity["fields"][source_lower + "Id"] = { "type": "ObjectId", "required": True, "displayName": source_lower + "Id", "readOnly": True,
-                                                   "ui": { "link": f'entity/{source}/' + "${value}" } }
+                entity["fields"][source_lower + "Id"] = { "type": "ObjectId", "required": True, "displayName": source_lower + "Id", "readOnly": True }
+                                                   
 
 
         dictionaries = decorator.get_objects()
