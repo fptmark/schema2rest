@@ -3,6 +3,8 @@ import sys
 import os
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
+import pprint
+from black import format_str, FileMode
 
 # Add parent directory to path to allow importing helpers
 sys.path.append(str(Path(__file__).parent.parent))
@@ -82,38 +84,6 @@ def model_field_filter(field_data):
     return base_type, field_code
 
 
-def infer_widget_type(field_info):
-    """
-    Infer the appropriate widget type based on field type and validations.
-    """
-    field_type = field_info.get("type", "String")
-    
-    if field_type == "String":
-        if "enum" in field_info:
-            return "select"
-        if "pattern" in field_info:
-            pattern = field_info["pattern"]
-            if "email" in str(pattern).lower():
-                return "email"
-            if "url" in str(pattern).lower():
-                return "url"
-        if "maxLength" in field_info and int(field_info["maxLength"]) > 100:
-            return "textarea"
-        return "text"
-    elif field_type == "Boolean":
-        return "checkbox"
-    elif field_type in ["Number", "Integer"]:
-        return "number"
-    elif field_type == "ISODate":
-        return "date"
-    elif field_type == "JSON":
-        return "jsoneditor"
-    elif field_type.startswith("Array"):
-        return "multiselect"
-    elif field_type == "ObjectId":
-        return "reference"
-    return "text"  # Default fallback
-
 def extract_metadata(fields):
     """
     Extract UI metadata from fields for use in the API responses.
@@ -147,13 +117,15 @@ def get_jinja_env() -> Environment:
     template_dir = os.path.join(script_dir, "templates", "models")
     env = Environment(
         loader=FileSystemLoader(template_dir),
-        autoescape=False,
+        keep_trailing_newline=True,
         trim_blocks=True,
         lstrip_blocks=True,
         extensions=['jinja2.ext.do']
     )
     env.filters['combine'] = combine_filter
     env.filters['split'] = lambda s, sep=None: s.split(sep)
+    env.filters['pprint'] = lambda value, indent=4: pprint.pformat(value, indent=indent)
+
     return env
 
 ############################
@@ -176,48 +148,9 @@ def generate_models(path_root: str):
     # Iterate over all entities dynamically (no special-case for any name)
     for entity_name, entity_def in schema.concrete_entities().items():
         print(f"Generating model for {entity_name}...")
-        raw_inherits = entity_def.get("inherits", [])
-        processed_bases = []
-        for base in raw_inherits:
-            if isinstance(base, dict) and "service" in base:
-                for s in base["service"]:
-                    if isinstance(s, str):  # Service provided as a mapping
-                        alias = s.split('.')[0].capitalize()
-                        processed_bases.append(alias)
-                    else:
-                        processed_bases.append(s)
-            elif isinstance(base, str):
-                processed_bases.append(base)
-        if not processed_bases:
-            processed_bases = ["Document"]
-
         fields = entity_def.get("fields", {})
-
-        # Examine relationships for this entity to find foreign key and auto add its id to fields - now handled in schemaConvert
-        # for parent in get_parents(entity_name, schema):
-        #     parent_id_field = f"{parent.lower()}Id"
-        #     fields[parent_id_field] = { 
-        #         "type": "ObjectId", 
-        #         "required": True,
-        #         "displayName": f"{parent} ID",
-        #         "readOnly": True,
-        #     }
-
-        # Process dictionary lookups.
-        # for field, attributes in fields.items():
-        #     for attribute, value in attributes.items():
-        #         if isinstance(value, str) and value.startswith(DICTIONARY_KEY):
-        #             value = value[len(DICTIONARY_KEY):]
-        #             fields[field][attribute] = get_dictionary_value(value)
-
         uniques = entity_def.get("uniques", [])
         
-        # Find all auto-update fields
-        auto_update_fields = []
-        for field_name, field_info in fields.items():
-            if field_info.get('type') == 'ISODate' and field_info.get('autoUpdate', False):
-                auto_update_fields.append(field_name)
-
         # Extract metadata for this entity
         metadata = {
             "entity": entity_name,
@@ -226,21 +159,27 @@ def generate_models(path_root: str):
             "fields": extract_metadata(fields),
         }
         
+        # for f in fields.items():
+            # print(f"Field: {f}")
+        auto_generate_fields = [f for f, info in fields.items() if info.get("autoGenerate")]
+        auto_update_fields   = [f for f, info in fields.items() if info.get("autoUpdate")]
+
         rendered_model = model_template.render(
             entity=entity_name,
             fields=fields,
-            inherits=processed_bases,  # For class declaration
-            raw_inherits=raw_inherits,  # For generating imports
             uniques=uniques,
             auto_update_fields=auto_update_fields,
+            auto_generate_fields=auto_generate_fields,
             services=schema.services(),  # Pass the _services mapping from the YAML
             metadata=metadata  # Pass the metadata
         )
         
+        formatted_model = format_str(rendered_model, mode=FileMode())
+
         out_filename = f"{entity_name.lower()}_model.py"
         out_path = os.path.join(models_dir, out_filename)
         with open(out_path, "w") as f:
-            f.write(rendered_model)
+            f.write(formatted_model)
 
 def get_parents(child_name, schema):
     parents = []

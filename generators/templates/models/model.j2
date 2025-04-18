@@ -1,14 +1,13 @@
-{# Import macros #}
+{# model.j2 #}
 {% import "macros.j2" as macros %}
 
-{# Generate imports #}
-{{ macros.generate_imports(raw_inherits) }}
-from beanie import Document, PydanticObjectId
+from beanie import Document, PydanticObjectId, before_event, Insert
 from pydantic import BaseModel, Field, validator
 from typing import Optional, List, Dict, Any, ClassVar
 from datetime import datetime, timezone
-import re
 import json
+import re
+
 
 class UniqueValidationError(Exception):
     def __init__(self, fields, query):
@@ -17,64 +16,49 @@ class UniqueValidationError(Exception):
     def __str__(self):
         return f"Unique constraint violation for fields {self.fields}: {self.query}"
 
-{% if raw_inherits|length == 0 %}
-{# This is a base entity that doesn't inherit from anything #}
+
 class {{ entity }}(Document):
-    # Base fields
-{{ macros.field_declarations(fields) }}
-    
-    # Class-level metadata for UI generation
-    __ui_metadata__: ClassVar[Dict[str, Any]] = {{ metadata }}
-    
+{% for name, info in fields.items() %}
+{{ macros.typed_field(name, info) }}
+{% endfor %}
+
+    __ui_metadata__: ClassVar[Dict[str, Any]] = {{ metadata | pprint(indent=4) }}
+
     class Settings:
         name = "{{ entity|lower() }}"
-    
+
     @classmethod
     def get_metadata(cls) -> Dict[str, Any]:
-        """Get UI metadata for this entity."""
         return cls.__ui_metadata__
 
-{{ macros.save_method([], auto_update_fields) }}
+{{ macros.save_method(uniques, auto_update_fields, auto_generate_fields)
+   | indent(4, true) }}
+
 
 class {{ entity }}Create(BaseModel):
-    # Fields for create operations
-{{ macros.field_declarations(fields) -}}
-    {% include "validation.j2" %}
-{{ macros.orm_config() }}
+{% for name, info in fields.items() if not info.get('autoGenerate') and not info.get('autoUpdate') %}
+{{ macros.typed_field(name, info) }}
+{% endfor %}
+
+{% include "validation.j2" %}
+
+{{ macros.orm_config() | indent(4, true) }}
+
+
+class {{ entity }}Update(BaseModel):
+{% for name, info in fields.items() if not info.get('autoUpdate') %}
+{{ macros.typed_field(name, info) }}
+{% endfor %}
+
+{% include "validation.j2" %}
+
+{{ macros.orm_config() | indent(4, true) }}
+
 
 class {{ entity }}Read(BaseModel):
-    # Fields for read operations
     id: PydanticObjectId = Field(alias="_id")
-{{ macros.optional_field_declarations(fields) }}
-{{ macros.orm_config(true) }}
+{% for name, info in fields.items() %}
+{{ macros.typed_field(name, info) }}
+{% endfor %}
 
-{% else %}
-{# This is an entity that inherits from other entities #}
-class {{ entity }}({{ inherits|join(', ') }}):
-    # {{ entity }}-specific fields
-{{ macros.field_declarations(fields) }}
-    
-    # Class-level metadata for UI generation
-    __ui_metadata__: ClassVar[Dict[str, Any]] = {{ metadata }}
-    
-    class Settings:
-        name = "{{ entity|lower() }}"
-    
-    @classmethod
-    def get_metadata(cls) -> Dict[str, Any]:
-        """Get UI metadata for this entity."""
-        return cls.__ui_metadata__
-
-{{ macros.save_method(uniques if uniques else [], auto_update_fields) }}
-
-class {{ entity }}Create({% for base in raw_inherits %}{% if base is string %}{{ base }}Create{% endif %}{% endfor %}):
-    # {{ entity }}-specific fields
-{{ macros.field_declarations(fields) -}}
-    {% include "validation.j2" %}
-{{ macros.orm_config() }}
-
-class {{ entity }}Read({% for base in raw_inherits %}{% if base is string %}{{ base }}Read{% endif %}{% endfor %}):
-    # {{ entity }}-specific fields
-{{ macros.optional_field_declarations(fields) }}
-{{ macros.orm_config(true) }}
-{% endif %}
+{{ macros.orm_config(include_encoders=true) | indent(4, true) }}

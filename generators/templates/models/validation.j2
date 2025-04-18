@@ -1,86 +1,89 @@
-{# Template for field validation logic - can be included by other templates #}
-{# This template expects 'fields' to be defined in the parent context #}
-{# Custom validators for fields with constraints #}
+{# validation.j2: field validators for ISODate, lengths, patterns, enums, and ranges #}
 {% for field_name, field_info in fields.items() %}
     {% set ns = namespace(messages={}) %}
-    {% for key, value in field_info.items() %}
-        {% if key.endswith('.message') %}
-            {% set ns.messages = ns.messages | combine({ key[:-8]: value }) %}
-        {% endif %}
+    {% for key, val in field_info.items() if key.endswith('.message') %}
+    {%   set ns.messages = ns.messages | combine({ key[:-8]: val }) %}
     {% endfor %}
-    {% if field_info.get('enum') is not none or field_info.get('pattern') is not none or field_info.get('minLength') is not none or field_info.get('maxLength') is not none or field_info.get('min') is not none or field_info.get('max') is not none %}
+
+    {% if field_info.get('type') == 'ISODate' %}
+    @validator('{{ field_name }}', pre=True)
+    def parse_{{ field_name }}(cls, v):
+        if v in (None, '', 'null'):
+            return None
+        if isinstance(v, str):
+            return datetime.fromisoformat(v)
+        return v
+
+    {% endif %}
+
+    {% set enum_info    = field_info.get('enum') %}
+    {% set pattern_info = field_info.get('pattern') %}
+    {% set minlen       = field_info.get('minLength') %}
+    {% set maxlen       = field_info.get('maxLength') %}
+    {% set minval       = field_info.get('min') %}
+    {% set maxval       = field_info.get('max') %}
+
+    {% if field_info.get('type') in ['String','str']
+          or enum_info is not none
+          or pattern_info is not none
+          or minlen is not none
+          or maxlen is not none
+          or minval is not none
+          or maxval is not none %}
     @validator('{{ field_name }}')
     def validate_{{ field_name }}(cls, v):
         _custom = {{ ns.messages|tojson }}
-        {% if field_info.get('type') in ['String', 'str'] %}
-            {% if field_info.get('minLength') is not none %}
-        if v is not None and len(v) < {{ field_info.get('minLength') }}:
-                {% if ns.messages.get('minLength') is not none %}
-            raise ValueError(_custom["minLength"])
-                {% else %}
-            raise ValueError("{{ field_name }} must be at least {{ field_info.get('minLength') }} characters")
-                {% endif %}
+
+        {% if field_info.get('type') in ['String','str'] %}
+            {% if minlen is not none %}
+        if v is not None and len(v) < {{ minlen }}:
+            raise ValueError(_custom.get('minLength',
+                          '{{ field_name }} must be at least {{ minlen }} characters'))
             {% endif %}
-            {% if field_info.get('maxLength') is not none %}
-        if v is not None and len(v) > {{ field_info.get('maxLength') }}:
-                {% if ns.messages.get('maxLength') is not none %}
-            raise ValueError(_custom["maxLength"])
-                {% else %}
-            raise ValueError("{{ field_name }} must be at most {{ field_info.get('maxLength') }} characters")
-                {% endif %}
-            {% endif %}
-            {% if field_info.get('pattern') is not none %}
-                {% if field_info.get('pattern') is mapping %}
-                    {% set regex_pattern = field_info.get('pattern').get('regex') %}
-                    {% set pattern_message = field_info.get('pattern').get('message') %}
-                {% else %}
-                    {% set regex_pattern = field_info.get('pattern') %}
-                    {% set pattern_message = None %}
-                {% endif %}
-        if v is not None and not re.match(r'{{ regex_pattern }}', v):
-                {% if pattern_message %}
-            raise ValueError("{{ pattern_message }}")
-                {% elif ns.messages.get('pattern') is not none %}
-            raise ValueError(_custom["pattern"])
-                {% else %}
-            raise ValueError("{{ field_name }} is not in the correct format")
-                {% endif %}
+            {% if maxlen is not none %}
+        if v is not None and len(v) > {{ maxlen }}:
+            raise ValueError(_custom.get('maxLength',
+                          '{{ field_name }} must be at most {{ maxlen }} characters'))
             {% endif %}
         {% endif %}
-        {% if field_info.get('enum') is not none %}
-                {% if field_info.get('enum') is mapping %}
-                    {% set allowed_values = field_info.get('enum').get('values') %}
-                    {% set enum_message = field_info.get('enum').get('message') %}
-                {% else %}
-                    {% set allowed_values = field_info.get('enum') %}
-                    {% set enum_message = None %}
-                {% endif %}
-        allowed = {{ allowed_values|tojson }}
-        if v is not None and v not in allowed:
-            {% if enum_message %}
-            raise ValueError("{{ enum_message }}")
-            {% elif ns.messages.get('enum') is not none %}
-            raise ValueError(_custom["enum"])
-            {% else %}
-            raise ValueError("{{ field_name }} must be one of " + ", ".join(allowed))
-            {% endif %}
+
+        {% if pattern_info is mapping %}
+            {% set regex   = pattern_info.get('regex') %}
+            {% set pat_msg = pattern_info.get('message') %}
+        if v is not None and not re.match(r'{{ regex }}', v):
+            raise ValueError(_custom.get('pattern','{{ pat_msg }}'))
+        {% elif pattern_info %}
+        if v is not None and not re.match(r'{{ pattern_info }}', v):
+            raise ValueError(_custom.get('pattern',
+                          '{{ field_name }} is not in the correct format'))
         {% endif %}
-        {% if field_info.get('min') is not none %}
-        if v is not None and v < {{ field_info.get('min') }}:
-            {% if ns.messages.get('min') is not none %}
-            raise ValueError(_custom["min"])
-            {% else %}
-            raise ValueError("{{ field_name }} must be at least {{ field_info.get('min') }}")
-            {% endif %}
+
+        {% if enum_info is mapping %}
+            {% set allowed   = enum_info.get('values') %}
+            {% set enum_msg  = enum_info.get('message') %}
+        allowed = {{ allowed|tojson }}
+        if v not in allowed:
+            raise ValueError(_custom.get('enum',
+                          '{{ enum_msg }}' if enum_msg else
+                          '{{ field_name }} must be one of ' + ','.join(allowed)))
+        {% elif enum_info %}
+        allowed = {{ enum_info|tojson }}
+        if v not in allowed:
+            raise ValueError(_custom.get('enum',
+                          '{{ field_name }} must be one of ' + ','.join(allowed)))
         {% endif %}
-        {% if field_info.get('max') is not none %}
-        if v is not None and v > {{ field_info.get('max') }}:
-            {% if ns.messages.get('max') is not none %}
-            raise ValueError(_custom["max"])
-            {% else %}
-            raise ValueError("{{ field_name }} must be at most {{ field_info.get('max') }}")
-            {% endif %}
+
+        {% if minval is not none %}
+        if v is not None and v < {{ minval }}:
+            raise ValueError(_custom.get('min',
+                          '{{ field_name }} must be at least {{ minval }}'))
         {% endif %}
+        {% if maxval is not none %}
+        if v is not None and v > {{ maxval }}:
+            raise ValueError(_custom.get('max',
+                          '{{ field_name }} must be at most {{ maxval }}'))
+        {% endif %}
+
         return v
     {% endif %}
 {% endfor %}

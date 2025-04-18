@@ -1,87 +1,49 @@
-{# Reusable macros for model generation #}
+{# macros.j2 #}
 
-{# Macro for generating field definitions #}
-{% macro field_declarations(fields) %}
-{% for field_name, field_info in fields.items() %}
-    {% set type_str, field_init = field_info | model_field %}
-    {{ field_name }}: {{ type_str }} = {{ field_init }}
-{% endfor %}
+{% macro typed_field(name, info) -%}
+    {%- set base_type, field_init = info | model_field -%}
+    {{ name }}: {% if not info.required %}Optional[{{ base_type }}] = {{ field_init }}{% else %}{{ base_type }} = {{ field_init }}{% endif %}
 {% endmacro %}
 
-{# Macro for generating optional field definitions (for Read models) #}
-{% macro optional_field_declarations(fields) %}
-{% for field_name, field_info in fields.items() %}
-    {% set type_str, field_init = field_info | model_field %}
-    {{ field_name }}: Optional[{{ type_str }}] = {{ field_init | replace("Field(...", "Field(None") }}
-{% endfor %}
-{% endmacro %}
-
-{# Macro for generating the Class Config section #}
-{% macro orm_config(include_encoders=false) %}
-    class Config:
-        orm_mode = True
-        {% if include_encoders %}
-        allow_population_by_field_name = True
-        json_encoders = {PydanticObjectId: str}
-        {% endif %}
-{% endmacro %}
-
-{# Macro for generating the save method #}
-{% macro save_method(uniques_param, auto_update_fields) %}
-    {% if uniques_param %}
-    async def validate_uniques(self):
-        {% for unique in uniques_param %}
-        query_{{ loop.index }} = {
-            {% for field in unique %}
-            "{{ field }}": self.{{ field }},
-            {% endfor %}
-        }
-        existing_{{ loop.index }} = await self.__class__.find_one(query_{{ loop.index }})
-        if existing_{{ loop.index }}:
-            raise UniqueValidationError({{ unique|tojson }}, query_{{ loop.index }})
-        {% endfor %}
-
-    async def save(self, *args, **kwargs):
-        await self.validate_uniques()
-        {% if auto_update_fields %}
-        # Update timestamp fields for auto-updating fields
-        current_time = datetime.now(timezone.utc)
-        {% for field in auto_update_fields %}
-        self.{{ field }} = current_time
-        {% endfor %}
-        {% endif %}
-        return await super().save(*args, **kwargs)
-    {% else %}
-    async def save(self, *args, **kwargs):
-        {% if auto_update_fields %}
-        # Update timestamp fields for auto-updating fields
-        current_time = datetime.now(timezone.utc)
-        {% for field in auto_update_fields %}
-        self.{{ field }} = current_time
-        {% endfor %}
-        {% endif %}
-        return await super().save(*args, **kwargs)
+{% macro orm_config(include_encoders=false) -%}
+class Config:
+    orm_mode = True
+    {% if include_encoders %}
+    allow_population_by_field_name = True
+    json_encoders = {PydanticObjectId: str}
     {% endif %}
 {% endmacro %}
 
-{# Macro for generating class imports #}
-{% macro generate_imports(raw_inherits) %}
-{% if raw_inherits %}
-{% for base in raw_inherits %}
-    {% if base is string %}
-from app.models.{{ base|lower() }}_model import {{ base }}, {{ base }}Create, {{ base }}Read
-    {% elif base is mapping %}
-        {% for key, value in base.items() %}
-            {% if key == "service" %}
-                {% for service in value %}
-{% set module_path = "app.services." ~ service %}
-{% set parts = service | split('.') %}
-{% set alias = parts[0] | capitalize %}
-{% set concrete_class = (parts[1] | capitalize) ~ "Auth" %}
-from {{ module_path }} import {{ concrete_class }} as {{ alias }}
-                {% endfor %}
-            {% endif %}
-        {% endfor %}
+{% macro save_method(uniques, auto_update, auto_generate) -%}
+{% if uniques %}
+async def validate_uniques(self):
+    {% for u in uniques %}
+    query_{{ loop.index }} = { {% for f in u %}"{{ f }}": self.{{ f }},{% endfor %} }
+    existing_{{ loop.index }} = await self.__class__.find_one(query_{{ loop.index }})
+    if existing_{{ loop.index }}:
+        raise UniqueValidationError({{ u|tojson }}, query_{{ loop.index }})
+    {% endfor %}
+
+{% endif %}
+{% if auto_generate %}
+@before_event(Insert)
+def _set_autogen(self):
+    now = datetime.now(timezone.utc)
+    {% for f in auto_generate %}
+    self.{{ f }} = now
+    {% endfor %}
+
+{% endif %}
+async def save(self, *args, **kwargs):
+    {% if uniques %}
+    await self.validate_uniques()
     {% endif %}
-{% endfor %}
-{% endif %}{% endmacro %}
+    {% if auto_update %}
+    current_time = datetime.now(timezone.utc)
+    {% for f in auto_update %}
+    self.{{ f }} = current_time
+    {% endfor %}
+    {% endif %}
+    return await super().save(*args, **kwargs)
+
+{% endmacro %}
