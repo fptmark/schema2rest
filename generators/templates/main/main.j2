@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 rom fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
-from app.utilities.config import load_config 
+import app.utilities.utils as utils
 from app.db import Database
 
 {# --- Dynamic Import of Service Classes --- #}
@@ -20,7 +20,7 @@ from app.models.{{ entity|lower }}_model import {{ entity }}
 
 import logging
 LOG_FILE = "app.log"
-config = load_config()
+config = utils.load_system_config()
 is_dev = config.get('environment', 'production') == 'development'
 my_log_level = config.get('log_level', 'info' if is_dev else 'warning').upper()
 
@@ -99,8 +99,7 @@ def read_root():
 
 @app.get('/api/metadata')
 def get_entities_metadata():
-    overrides = load_config(Path('overrides.json'))
-    metadata =  [
+    return  [
 {% for entity in entities %}
         {{ entity }}.get_metadata(),     
 {% endfor %}
