@@ -2,6 +2,10 @@ import json
 from pathlib import Path
 from bson.objectid import ObjectId
 from typing import Dict, Any
+from pydantic import BaseModel
+from beanie import Document
+import logging
+
 
 # Path to the configuration file
 CONFIG_FILE = Path('config.json')
@@ -24,9 +28,13 @@ def load_system_config(config_file: Path = CONFIG_FILE) -> Dict[str, Any]:
 
 
 def load_settings(config_file: Path | None) -> Dict[str, Any]:
-    if config_file:
-        with open(config_file, 'r') as config_handle:
-            return json.load(config_handle)
+    try:
+        if config_file:
+            with open(config_file, 'r') as config_handle:
+                return json.load(config_handle)
+    except:
+        return {}
+
     return {}
 
 
@@ -39,6 +47,9 @@ def serialize_mongo_document(doc: Dict[str, Any]) -> Dict[str, Any]:
         doc['_id'] = str(doc['_id'])
     return doc
 
+
+# Helper for models
+
 def deep_merge_dicts(dest, override):
     for key, value in override.items():
         if (
@@ -49,3 +60,34 @@ def deep_merge_dicts(dest, override):
             deep_merge_dicts(dest[key], value)
         else:
             dest[key] = value
+
+def get_metadata(metadata) -> Dict[str, Any]:
+    overrides = load_settings(Path('overrides.json')) or {}
+    name = metadata.get('entity', '')
+    entity_cfg = overrides.get(name)
+    if entity_cfg:
+        deep_merge_dicts(metadata, entity_cfg)
+    return metadata
+
+
+
+# Helpers for routes
+
+async def apply_and_save(
+    doc: Document,
+    payload: BaseModel,
+    *,
+    exclude_unset: bool = True
+) -> Document:
+    """
+    Copy payload fields onto doc and call save().
+    """
+    data = payload.dict(exclude_unset=exclude_unset)
+    for field, value in data.items():
+        setattr(doc, field, value)
+    try:
+        await doc.save()
+    except Exception as e:
+        logging.exception("Error in apply_and_save()")
+        raise
+    return doc
