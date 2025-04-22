@@ -1,5 +1,62 @@
 from pathlib import Path
 from itertools import takewhile
+import re
+from typing import List, Tuple, Dict
+
+def load_templates(dirpath: str) -> List[Tuple[str,str]]:
+    """
+    Return a list of (filename, content) for each .tpl file in dirpath
+    whose name begins with a number, sorted by that leading number.
+    """
+    files = []
+    for f in Path(dirpath).glob("*.tpl"):
+        m = re.match(r"^(\d+)", f.name)
+        if m:
+            files.append((int(m.group(1)), f))
+    files.sort(key=lambda x: x[0])
+    return [(f.name, f.read_text()) for _, f in files]
+
+_placeholder_re = re.compile(r"\{([^{}]+)\}")
+
+def render_template_content(
+    template: str,
+    vars_dict: Dict[str,str]
+) -> str:
+    """
+    Substitute every {key} in `template` with vars_dict[key] if present.
+    If key not in vars_dict:
+      - If the line is *only* "{key}", skip that line altogether.
+      - Otherwise, leave the "{key}" text intact.
+    Returns the full rendered text (with skipped lines removed).
+    """
+    out_lines = []
+    for line in template.splitlines():
+        # find all placeholders in this line
+        placeholders = _placeholder_re.findall(line)
+        if not placeholders:
+            # no placeholders at all → keep the line
+            out_lines.append(line)
+            continue
+
+        new_line = line
+        skip = False
+
+        for key in placeholders:
+            token = f"{{{key}}}"
+            if key in vars_dict:
+                # perform substitution
+                new_line = new_line.replace(token, vars_dict[key])
+            else:
+                # missing var: if the *entire* line is exactly "{key}", we skip it
+                if new_line.strip() == token:
+                    skip = True
+                    break
+                # else: leave token intact
+
+        if not skip:
+            out_lines.append(new_line)
+
+    return "\n".join(out_lines)
 
 
 def generate_file(path_root: str, file_name: Path, lines)-> Path:
