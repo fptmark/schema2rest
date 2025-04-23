@@ -57,6 +57,12 @@ class Schema:
         
         return entity_schemas
 
+    def dictionary_lookup(self, dictionary_name: str) -> str:
+        dicts = self.dictionaries()
+        words = dictionary_name.split('.')
+        dict_obj = dicts[words[0]]
+        return dict_obj.get(words[1], None) if len(words) > 1 else dict_obj
+
     def relationships(self):
         return self._get_object('_relationships')
 

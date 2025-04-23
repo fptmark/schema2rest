@@ -1,7 +1,7 @@
-class ${Entity}Create(BaseModel):
-    ${RegularFieldDefs}
+class {Entity}Create(BaseModel):
+    {BaseFields}
 
-    ${FieldValidators}
+    {Validators}
     class Config:
         orm_mode = True
         extra = Extra.ignore

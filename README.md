@@ -59,6 +59,7 @@ schema2rest.py schema.yaml output_dir
 ## Environment
 1. Assumes MongoDB is installed
 2. Uses config.json to define the MongoDB config and server URL
+3. Uses overrides.json to override metadata at server runtime
 
 ## MMD Enhancements (uses MMD comments)
 1. Allows a "BaseEntity" that all entities include (e.g. - id, updatedAt)
@@ -94,6 +95,17 @@ The system supports a set of custom decorators
 - @validate
     Only allowed on a line where a field is defined and defines rules/messages/validations for an entity field
             Ex.    String url %% @validate { required: true, pattern: "dictionary=pattern.url", "pattern.message": "Bad URL format" }
+
+    Given that S2R leverages Pydantic for models and validation, the following attributes are supported
+    |Validator attributes|
+    |--------------------|
+    | min_length         |
+    | max_length         |
+    | regex              |
+    | ge                 |
+    | le                 |
+    | description        |
+    | default_factory    |
 
 - @service
     Only allowed inside an entity defintion but not a field definition.  This is a service that the object will use to provide extended functionality
@@ -142,13 +154,13 @@ The `@ui` decorator allows you to customize how fields are displayed in the user
 | `displayName` | Human-readable name for the field | `@ui firstName { displayName: "First Name" }` | Converted from camelCase to Title Case |
 | `displayPages` | When to display the field | `@ui password { displayPages: "summary|form" }`.  
 | `display` | Display attributes '' or hidden or secret | `@ui password { display: "secret" }` | "always" 
-| `widget` | UI control type | `@ui email { widget: "email" }` | Inferred from field type and validation |
+#| `widget` | UI control type | `@ui email { widget: "email" }` | Inferred from field type and validation |  - depreciated
 | `placeholder` | Placeholder text | `@ui email { placeholder: "example@domain.com" }` | None |
 | `helpText` | Helper text shown below the field | `@ui password { helpText: "Min 8 characters" }` | None |
 | `readOnly` | Whether field is read-only | `@ui createdAt { readOnly: true }` | false |
 | `displayAfterField` | Field to display after (for ordering) | `@ui lastName { displayAfterField: "firstName" }` | Previous field name |
-| `secret` | Do not display the contents by default such as password
-| `link` | display a link | entities/account/${value}
+| `format` | formatting info
+| `link` | display a link | @ui accountId { link: 'entities/account/${value}' }
 
 ### Display Modes
 
@@ -160,7 +172,7 @@ The `displayPages` attribute is a multi-value seperated by a vertical bar (|)
 - `none` - Do not show 
 
 
-### Widget Types
+### Widget Types - CURRENTLY NOT SUPPORTED.  See if we can format instead.
 
 Common widget types include:
 - `text` - Standard text input (default for strings)

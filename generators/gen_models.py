@@ -1,326 +1,317 @@
-#!/usr/bin/env python
-import sys
+#!/usr/bin/env python3
 import os
-from pathlib import Path
+import re
 import json
+import sys
+from typing import Dict, Any, List, Optional
+from pathlib import Path
+from datetime import datetime, timezone
+import pprint
 
-# Add parent directory to path to allow importing helpers
 sys.path.append(str(Path(__file__).parent.parent))
-from common import Schema, helpers
+from common import Schema     # ← use your Schema wrapper
 
-DICTIONARY_KEY = "dictionary="
+# your exact placeholder logic
+PLACEHOLDER_PATTERN = re.compile(r"\{(\w+)\}")
 
-############################
-# CUSTOM FILTER
-############################
-# def model_field_filter(field_data):
-#     base_type = "Any"
-#     default = "..."
-#     field_params = []
-
-#     field_type = field_data.get('type', 'String')
-#     required = field_data.get('required', True)
-
-#     if not required:
-#         default = "None"
-
-#     # Map YAML types to Python types
-#     type_map = {
-#         'String': 'str',
-#         'Integer': 'int',
-#         'Number': 'float',
-#         'Boolean': 'bool',
-#         'ISODate': 'datetime',
-#         'ObjectId': 'PydanticObjectId',
-#         'Array[String]': 'List[str]',
-#         'JSON': 'dict',
-#     }
-
-#     base_type = type_map.get(field_type, 'Any')
-
-#     if field_type == 'ISODate':
-#         if field_data.get('autoGenerate') or field_data.get('autoUpdate'):
-#             default = "default_factory=lambda: datetime.now(timezone.utc)"
-
-#     if field_type == 'Array[String]':
-#         base_type = 'Optional[List[str]]' if not required else 'List[str]'
-
-#     # Field constraints
-#     if field_type in ['String', 'str']:
-#         if 'minLength' in field_data:
-#             field_params.append(f"min_length={field_data['minLength']}")
-#         if 'maxLength' in field_data:
-#             field_params.append(f"max_length={field_data['maxLength']}")
-#     if 'pattern' in field_data:
-#         pattern_val = field_data['pattern']
-#         if isinstance(pattern_val, dict):
-#             regex = pattern_val.get("regex")
-#             if regex and regex.startswith("dictionary="):
-#                 resolved = get_dictionary_value(regex[len("dictionary="):])
-#                 if resolved:
-#                     field_data['pattern']['regex'] = resolved
-#                     regex = resolved
-#             field_params.append(f"regex=r\"{regex}\"")
-#         else:
-#             field_params.append(f"regex=r'{pattern_val}'")
-#     if 'enum' in field_data:
-#         enum_val = field_data['enum']
-#         if isinstance(enum_val, dict):
-#             field_params.append(f"description=\"Allowed values: {enum_val.get('values')}\"")
-#         else:
-#             field_params.append(f"description=\"Allowed values: {enum_val}\"")
-#     if 'min' in field_data:
-#         field_params.append(f"ge={field_data['min']}")
-#     if 'max' in field_data:
-#         field_params.append(f"le={field_data['max']}")
-
-#     param_str = ", ".join(field_params)
-#     field_code = f"Field({default}{', ' + param_str if param_str else ''})"
-
-#     # Just return the Field(...) code
-#     return base_type, field_code
+def load_templates():
+    """
+    Return [(tpl_name, lines), …] sorted by leading number in filename.
+    """
+    template_dir = Path(__file__).resolve().parent / "templates" / "models"
+    tpls = []
+    for fn in sorted(template_dir.iterdir(), key=lambda p: int(p.name.split(".")[0])):
+        if fn.suffix == ".tpl":
+            tpls.append((fn.name, fn.read_text().splitlines()))
+    return tpls
 
 
-# def extract_metadata(fields):
-#     """
-#     Extract UI metadata from fields for use in the API responses.
-#     Also generates any missing UI metadata with sensible defaults.
-#     """
-#     metadata = {}
-#     for field_name, field_value in fields.items():
-#         field_metadata = {}
-#         for key, value in field_value.items():
-#             if key not in ['enum', 'ui_metadata']:
-#                 field_metadata[key] = value
-#             elif key == 'ui_metadata':
-#                 field_metadata.update(value)
-#             elif key == "enum":
-#                 field_metadata[key] = value
+def render_template(tpl_name: str, lines: List[str], vars_map: Dict[str, str]):
+    """
+    Single‐pass {Key}→vars_map[Key] substitution.
+    - Error if tpl_name references a var not in vars_map.
+    - If a line is exactly "{Key}" and vars_map[Key]=="" skip that line.
+    - If a line is exactly "{Key}" and vars_map[Key] is multiline,
+      split on \n and prefix each with the same indentation,
+      preserving any leading spaces in the var text.
+    """
+    out: List[str] = []
+    for raw in lines:
+        keys = PLACEHOLDER_PATTERN.findall(raw)
+        missing = [k for k in keys if k not in vars_map]
+        if missing:
+            print(f"Template '{tpl_name}' missing vars: {missing}")
+            raise RuntimeError(f"Template '{tpl_name}' missing vars: {missing}")
 
-#         metadata[field_name] = field_metadata
+        stripped = raw.strip()
+        # standalone placeholder?
+        if len(keys) == 1 and stripped == f"{{{keys[0]}}}":
+            val = vars_map[keys[0]]
+            if val == "":
+                continue
+            indent = raw[: len(raw) - len(raw.lstrip()) ]
+            for vline in val.splitlines():
+                # only skip truly empty lines, keep lines that are spaces
+                if vline != "":
+                    out.append(indent + vline)
+            continue
 
-#     return metadata
+        # inline replacement
+        line = raw
+        for k in keys:
+            line = line.replace(f"{{{k}}}", vars_map[k])
+        out.append(line)
 
-# def combine_filter(dict1, dict2):
-#     new_dict = dict1.copy()
-#     new_dict.update(dict2)
-#     return new_dict
+    return out
 
-############################
-# JINJA ENVIRONMENT SETUP
-############################
-# def get_jinja_env() -> Environment:
-#     script_dir = os.path.dirname(os.path.abspath(__file__))
-#     template_dir = os.path.join(script_dir, "templates", "models")
-#     env = Environment(
-#         loader=FileSystemLoader(template_dir),
-#         keep_trailing_newline=True,
-#         trim_blocks=True,
-#         lstrip_blocks=True,
-#         extensions=['jinja2.ext.do']
-#     )
-#     env.filters['combine'] = combine_filter
-#     env.filters['split'] = lambda s, sep=None: s.split(sep)
-#     env.filters['pprint'] = lambda value, indent=4: pprint.pformat(value, indent=indent)
+def type_annotation(info: Dict[str, Any], schema):
+    """Return (python_type, field_init) for a schema field."""
+    t = info.get("type")
+    required = info.get("required", False)
+    auto_gen = info.get("autoGenerate", False)
+    auto_up  = info.get("autoUpdate", False)
 
-#     return env
+    # base
+    if t == "ISODate":
+        base = "datetime"
+    elif t in ("String","str", "text"):
+        base = "str"
+    elif t == "Integer":
+        base = "int"
+    elif t == "Number":
+        base = "float"
+    elif t == "Boolean":
+        base = "bool"
+    elif t == "JSON":
+        base = "Dict[str, Any]"
+    elif t == "Array[String]":
+        base = "List[str]"
+    elif t == "ObjectId":
+        base = "PydanticObjectId"
+    else:
+        base = "Any"
 
-############################
-# MODEL GENERATION
-############################
-def generate_models(path_root: str):
-    print("Generating models...")
-    models_dir = os.path.join(path_root, "app", "models")
+    # optional wrapper
+    if not required and not auto_gen and not auto_up:
+        base = f"Optional[{base}]"
 
-    template_dir = os.path.join('.', "templates", "models")
-    templates = helpers.load_templates(template_dir)
-    
-    os.makedirs(models_dir, exist_ok=True)
-    
-    # Iterate over all entities dynamically (no special-case for any name)
-    for entity_name, entity_def in schema.concrete_entities().items():
-        # use a dict, not a list
-        ctx = get_variables(entity_name, entity_def)
-            # add whatever other slots your templates expect...
+    # default/factory
+    validators = get_validator(info, schema)
+    if auto_gen or auto_up:     # assume type is ISODate
+        init = "default_factory=lambda: datetime.now(timezone.utc)"
+    elif required:
+        init = "..., " + ', '.join(validators) if validators else "..."
+    else:
+        init = "None, " + ', '.join(validators) if validators else "None"
 
-        print(f"Generating model for {entity_name}…")
-        rendered_outputs = []
-        for tpl_name, tpl_body in templates:
-            rendered = helpers.render_template_content(tpl_body, ctx)
-            rendered_outputs.append(rendered)        
+    return base, f"Field({init})"
 
-            out_filename = f"{entity_name.lower()}_model.py"
-            out_path = os.path.join(models_dir, out_filename)
-            with open(out_path, "w") as f:
-                f.write("\n\n".join(rendered_outputs))
+def build_vars(entity: str, e_def: Dict[str, Any], schema: Schema):
+    """Collect all of the placeholders your 1.–4. templates expect."""
+    fields = e_def.get("fields", {})
+    operations = e_def.get("operations", "")
+    ui = e_def.get("ui", {})
 
-def get_variables(entity_name, entity_def):
-    regular_fields = entity_def.get("fields", {})
-    autogen_fields = [f for f in regular_fields if regular_fields[f].get("autoGenerate")]
-    auto_update_fields = [f for f in regular_fields if regular_fields[f].get("autoUpdate")]
-    for f in regular_fields:
-        if f in autogen_fields or f in auto_update_fields:
-            regular_fields.pop(f)
-    regular_fields_str = []
-    for name, attributes in regular_fields.items():
-        if attributes.required:
-            string = f'    {name}: {attributes.type} = Field(None)'
+    E = entity
+    e = entity.lower()
+
+    # metadata block
+    metadata = {'entity': E, 'fields': fields, 'operations': operations, 'ui': ui}
+    # replace any dictionary lookups in the metadata
+    update_metadata(metadata, schema)
+    Metadata = pprint.pformat(metadata, indent=4)
+
+    # Build the Fields declarations, save function and validators
+    base_field_lines = []   # declarations for fields that are not autoGenerate or autoUpdate
+    auto_field_lines = []   # declarations for fields that are autoGenerate or autoUpdate
+    save_lines = []         # save function which is for autoUpdate fields
+    validator_lines: List[str] = []    # validators for fields that are not autoGenerate or autoUpdate
+
+    for field_name, info in fields.items():
+        base, init = type_annotation(info, schema)
+        line = f"{field_name}: {base} = {init}"
+        if info.get("autoGenerate", False):
+            auto_field_lines.append(line)
+        elif info.get("autoUpdate", False):   # autoupdate needs to be in save()
+            auto_field_lines.append(line)
+            save_lines.append(f"    self.{field_name} = datetime.now(timezone.utc)")
         else:
-            string = f'    {name}: Optional[{attributes.type}] = Field(None)'
-        if attributes.type == "ISODate":
-            string
-    
+            base_field_lines.append(line)
+            validator_lines = validator_lines + build_validator(field_name, info, schema)
+
+    # one blank line between each field decl
+    BaseFields = "\n".join(base_field_lines)
+    AutoFields = "\n".join(auto_field_lines)
+
+    # generate the save function if there are any autoUpdate fields
+    if len(auto_field_lines) > 0:
+        save_lines = [ "async def save(self, *args, **kwargs):" ] + save_lines 
+        save_lines.append("    return await super().save(*args, **kwargs)")
+        SaveFunction = "\n".join(f"{line}" for line in save_lines)
+
+    # generate the validators if there are any 
+    if len(validator_lines) > 0:
+        Validators  = "\n".join(f"{line}" for line in validator_lines)
+
+
     return {
-            "Entity": entity_name,
-            "entity": entity_name.lower(),
-            "fields":   entity_def.get("fields", {}),
-            "metadata": entity_def.get("metadata", {}),
-            "uniques":  entity_def.get("unique", []),
-            "services": schema.services(),
+        "Entity":           E,
+        "EntityLower":      e,
+        "Metadata":         Metadata,
+        "BaseFields":       BaseFields,
+        "AutoFields":       AutoFields,
+        "SaveFunction":     SaveFunction,
+        "Validators":       Validators
     }
 
-def get_parents(child_name, schema):
-    parents = []
-    for entity_name, entity_def in schema.concrete_entities().items():
-        for relation in entity_def.get("relationships", []):
-            if child_name == relation:
-                parents.append(entity_name)
-    return parents
-
-def get_dictionary_value(value):
-    words = value.split('.')
-    return schema.dictionaries().get(words[0], {}).get(words[1], value)
-
-Valid_Attribute_Messages = ["minLength.message", "maxLength.message", "pattern.message", "enum.message"]
-def valid_message_fields(fields):
-    bad = []
-    for field, attributes in fields.items():
-        for attribute in attributes:
-            if '.message' in attribute and (attribute not in Valid_Attribute_Messages):
-                bad.append(f"{field}:{attribute}")
-    return bad
-
-if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python gen_models.py <schema.yaml> <path_root>")
-        sys.exit(1)
-    schema = Schema(sys.argv[1])
-    path_root = sys.argv[2]
-    generate_models(path_root)
+def update_metadata(metadata: Dict[str, Any], schema: Schema):
+    """
+    Update the metadata dictionary with any dictionary lookups.
+    """
+    for field_name, field_def in metadata.items():
+        if isinstance(field_def, dict):
+            update_metadata(field_def, schema)
+        elif field_name == 'regex' and isinstance(field_def, str):
+            value = metadata['regex']
+            if value.startswith("dictionary="):
+                value = value.replace("dictionary=", "")
+                metadata['regex'] = schema.dictionary_lookup(value)
+    return metadata
 
 
+def get_validator(info: Dict[str, Any], schema: Schema) -> List[str]:
+    lines: list[str] = []
+    pydantic_type = ['min_length', 'max_length', 'ge', 'le']
+    for key in pydantic_type:
+        if key in info:
+            lines.append(f"{key}={info[key]}")
 
+    if 'pattern'in info:
+        regex, _ = get_pattern(info, schema)
+        lines.append(f"regex=r\"{regex}\"")
 
-#  New generator
-
-import yaml
-import json
-from string import Template
-from datetime import datetime, timezone
-from pathlib import Path
-
-def load_schema(path):
-    return yaml.safe_load(Path(path).read_text())
-
-def build_field_defs(fields):
-    lines = []
-    for name, info in fields.items():
-        # determine python type & default
-        # Here you should integrate your model_field helper
-        py_type, default = info.get("python_type"), info.get("default")
-        if not info.get("required"):
-            line = f"    {name}: Optional[{py_type}] = {default}"
+    if 'enum' in info:
+        enum = info['enum']
+        values = enum.get('values', [])
+        msg = enum.get('message', "")
+        if len(msg) == 0:
+            lines.append(f"description =\"{msg}: {values}\"")
         else:
-            line = f"    {name}: {py_type} = {default}"
-        lines.append(line)
-    return "\n".join(lines)
+            lines.append(f"description =\"{msg}\"")
+    return lines
 
-def build_validators(fields):
-    blocks = []
-    for name, info in fields.items():
-        if info.get("type") == "ISODate":
-            blocks.append(f"""    @validator('{name}', pre=True)
-    def parse_{name}(cls, v):
-        if v in (None, '', 'null'):
-            return None
-        if isinstance(v, str):
-            return datetime.fromisoformat(v)
-        return v
-""")
-    return "\n".join(blocks)
+def get_pattern(info: Dict, schema: Schema) -> tuple[str, str]:
+    regex = ""
+    message = ""
+    pattern = info.get('pattern', {})
+    if 'regex' in pattern:
+        regex = pattern.get('regex')
+        if regex.startswith("dictionary="):
+            regex = regex.replace("dictionary=", "")
+            regex = schema.dictionary_lookup(regex)
+    if 'message' in pattern:
+        message = pattern.get('message')
+    return regex, message
 
-def build_save_method(auto_upd, auto_gen, uniques):
-    parts = []
-    if uniques:
-        parts.append("async def validate_uniques(self):")
-        for idx,u in enumerate(uniques, start=1):
-            q = ", ".join(f'\"{f}\": self.{f}' for f in u)
-            parts.append(f"    query_{idx} = {{ {q} }}")
-            parts.append(f"    existing_{idx} = await self.__class__.find_one(query_{idx})")
-            parts.append(f"    if existing_{idx}:")
-            parts.append(f"        raise UniqueValidationError({u!r}, query_{idx})")
-        parts.append("")
 
-    if auto_gen:
-        parts.append("@before_event(Insert)")
-        parts.append("def _set_autogen(self):")
-        parts.append("    now = datetime.now(timezone.utc)")
-        for f in auto_gen:
-            parts.append(f"    self.{f} = now")
-        parts.append("")
+def build_validator(fname: str, info: Dict[str, Any], schema: Schema) -> List[str]:
+    lines = []
+    base, init = type_annotation(info, schema)
 
-    parts.append("async def save(self, *args, **kwargs):")
-    if uniques:
-        parts.append("    await self.validate_uniques()")
-    if auto_upd:
-        parts.append("    current_time = datetime.now(timezone.utc)")
-        for f in auto_upd:
-            parts.append(f"    self.{f} = current_time")
-    parts.append("    return await super().save(*args, **kwargs)")
-    return "\n".join(parts)
+    # Always add ISODate pre-validator if applicable
+    if info.get("type") == "ISODate":
+        lines.append(f"@validator('{fname}', pre=True)")
+        lines.append(f"def parse_{fname}(cls, v):")
+        lines.append(f"    if v in (None, '', 'null'):")
+        lines.append(f"        return None")
+        lines.append(f"    if isinstance(v, str):")
+        lines.append(f"        return datetime.fromisoformat(v)")
+        lines.append(f"    return v")
+        lines.append("")   # Blank line after pre-validator
 
-def render_template(tpl_path, **ctx):
-    raw = Path(tpl_path).read_text()
-    return Template(raw).substitute(**ctx)
+    # Check for other constraints
+    pat   = info.get("pattern")
+    enum  = info.get("enum")
+    mnlen = info.get("min_length")
+    mxlen = info.get("max_length")
+    mn    = info.get("ge")
+    mx    = info.get("le")
+
+    if any((pat, enum, mnlen is not None, mxlen is not None, mn is not None, mx is not None)):
+        lines.append(f"@validator('{fname}')")
+        lines.append(f"def validate_{fname}(cls, v):")
+        lines.append(f"    _custom = {{}}")
+
+        if mnlen is not None:
+            lines.append(f"    if v is not None and len(v) < {mnlen}:")
+            lines.append(f"        raise ValueError('{fname} must be at least {mnlen} characters')")
+
+        if mxlen is not None:
+            lines.append(f"    if v is not None and len(v) > {mxlen}:")
+            lines.append(f"        raise ValueError('{fname} must be at most {mxlen} characters')")
+
+        if pat is not None:
+            if isinstance(pat, dict):
+                regex, pm = get_pattern(info, schema)
+            else:
+                regex = pat
+                pm = None
+            lines.append(f"    if v is not None and not re.match(r'{regex}', v):")
+            if pm:
+                lines.append(f"        raise ValueError('{pm}')")
+            else:
+                lines.append(f"        raise ValueError('{fname} is not in the correct format')")
+
+        if enum is not None:
+            if isinstance(enum, dict):
+                allowed = enum.get("values")
+                em = enum.get("message")
+            else:
+                allowed = enum
+                em = None
+            lines.append(f"    allowed = {allowed}")
+            lines.append(f"    if v is not None and v not in allowed:")
+            if em:
+                lines.append(f"        raise ValueError('{em}')")
+            else:
+                lines.append(f"        raise ValueError('{fname} must be one of ' + ','.join(allowed))")
+
+        if mn is not None:
+            lines.append(f"    if v is not None and v < {mn}:")
+            lines.append(f"        raise ValueError('{fname} must be at least {mn}')")
+
+        if mx is not None:
+            lines.append(f"    if v is not None and v > {mx}:")
+            lines.append(f"        raise ValueError('{fname} must be at most {mx}')")
+
+        lines.append(f"    return v")
+        lines.append(" ")  # Blank line after validator
+
+    return lines
+
 
 def main():
-    schema = load_schema('schema.yaml')['_entities']
-    for entity, meta in schema.items():
-        fields = {}
-        if meta.get('inherit'):
-            base = schema['BaseEntity']['fields']
-            fields.update(base)
-        fields.update(meta['fields'])
-        auto_upd = [n for n,i in fields.items() if i.get('autoUpdate')]
-        auto_gen = [n for n,i in fields.items() if i.get('autoGenerate')]
-        uniques = meta.get('unique', [])
-        fd = build_field_defs(fields)
-        md_json = json.dumps(meta, indent=4)
-        save_block = build_save_method(auto_upd, auto_gen, uniques)
-        vals = build_validators(fields)
+    schema = Schema(sys.argv[1])
+    outdir = Path(sys.argv[2], "app", "models")
+    templates = load_templates()
+    outdir.mkdir(exist_ok=True)
 
-        base_ctx = {
-            'Entity': entity,
-            'entity_lower': entity.lower(),
-            'FieldDefs': fd,
-            'Metadata': md_json,
-            'SaveMethod': save_block,
-            'CreateFields': "\n".join(l for l in fd.splitlines() if 'createdAt' not in l and 'updatedAt' not in l),
-            'UpdateFields': "\n".join(l for l in fd.splitlines() if 'updatedAt' not in l),
-            'ReadFields': fd,
-            'Validators': vals
-        }
+    print(f"Generating models in {outdir}")
+    for entity, defs in schema.concrete_entities().items():
+        if defs.get("abstract", False):
+            continue
 
-        out_model  = render_template(os.path.join(templates_dir, 'model.tpl'), **base_ctx)
-        out_create = render_template(os.path.join(templates_dir, 'create.tpl'), **base_ctx)
-        out_update = render_template(os.path.join(templates_dir, 'update.tpl'), **base_ctx)
-        out_read   = render_template(os.path.join(templates_dir, 'read.tpl'), **base_ctx)
+        vars_map = build_vars(entity, defs, schema)
+        out: List[str] = []
 
-        gen_dir = os.path.join(base_dir, 'gen')
-        os.makedirs(gen_dir, exist_ok=True)
-        Path(os.path.join(gen_dir, f'{entity.lower()}_model.py')).write_text(
-            "\n\n".join([out_model, out_create, out_update, out_read])
-        )
+        for tpl_name, tpl_lines in templates:
+            rendered = render_template(tpl_name, tpl_lines, vars_map)
+            out.extend(rendered)
+            out.append("")   # blank line between template blocks
 
-if __name__ == '__main__':
+        out_path = outdir / f"{entity.lower()}_model.py"
+        out_path.write_text("\n".join(out).rstrip() + "\n")
+        print(f"Generated Model {out_path}")
+
+if __name__ == "__main__":
     main()
