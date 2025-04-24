@@ -280,6 +280,7 @@ class Decorator:
             "readOnly": [],
             "displayAfterField": [],
             "displayPages": [],
+            "clientEdit": []
         }
 
         for key, value in attributes.items():
