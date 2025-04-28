@@ -1,5 +1,5 @@
 from beanie import Document, PydanticObjectId
-from pydantic import BaseModel, Extra, Field, validator
+from pydantic import BaseModel, Extra, Field, validator, ConfigDict
 from typing import Optional, List, Dict, Any, ClassVar
 from datetime import datetime, timezone
 import re

@@ -2,6 +2,8 @@ class {Entity}Update(BaseModel):
     {BaseFields}
 
     {Validators}
-    class Config:
-        orm_mode = True
-        extra = Extra.ignore
+    
+    model_config = {
+        "from_attributes": True,
+        "validate_by_name": True
+    }
