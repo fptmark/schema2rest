@@ -172,10 +172,7 @@ def update_metadata(metadata: Dict[str, Any], schema: Schema):
         if isinstance(field_def, dict):
             update_metadata(field_def, schema)
         elif field_name == 'regex' and isinstance(field_def, str):
-            value = metadata['regex']
-            if value.startswith("dictionary="):
-                value = value.replace("dictionary=", "")
-                metadata['regex'] = schema.dictionary_lookup(value)
+            metadata['regex'] = dictionary_resolve(field_def, schema)
     return metadata
 
 
@@ -188,7 +185,7 @@ def get_validator(info: Dict[str, Any], schema: Schema) -> List[str]:
 
     if 'pattern'in info:
         regex, _ = get_pattern(info, schema)
-        lines.append(f"regex=r\"{regex}\"")
+        lines.append(f"pattern=r\"{regex}\"")
 
     if 'enum' in info:
         enum = info['enum']
@@ -201,17 +198,23 @@ def get_validator(info: Dict[str, Any], schema: Schema) -> List[str]:
     return lines
 
 def get_pattern(info: Dict, schema: Schema) -> tuple[str, str]:
-    regex = ""
     message = ""
     pattern = info.get('pattern', {})
-    if 'regex' in pattern:
-        regex = pattern.get('regex')
-        if regex.startswith("dictionary="):
-            regex = regex.replace("dictionary=", "")
-            regex = schema.dictionary_lookup(regex)
     if 'message' in pattern:
         message = pattern.get('message')
-    return regex, message
+    if 'regex' in pattern:
+        pattern = dictionary_resolve(pattern.get('regex'), schema)
+    return pattern, message
+
+def dictionary_resolve(value: str, schema: Schema) -> str:
+    """
+    Lookup a dictionary value in the schema.
+    """
+    if value.startswith("dictionary="):
+        value = value.replace("dictionary=", "")
+        value = schema.dictionary_lookup(value)
+    return value
+
 
 
 def build_validator(fname: str, info: Dict[str, Any], schema: Schema) -> List[str]:
