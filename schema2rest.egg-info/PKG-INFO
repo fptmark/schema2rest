@@ -1,0 +1,5 @@
+Metadata-Version: 2.2
+Name: schema2rest
+Version: 0.1
+Requires-Python: >=3.8
+Dynamic: requires-python

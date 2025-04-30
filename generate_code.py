@@ -6,6 +6,12 @@ import sys
 import os
 from pathlib import Path
 
+from generators.models.gen_model_main import generate_models
+from generators.gen_routes import generate_routes
+from generators.gen_service_routes import generate_service_routes
+from generators.gen_db import generate_db
+from generators.gen_main import generate_main
+
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from generators import (

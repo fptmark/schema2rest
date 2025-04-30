@@ -1,0 +1,17 @@
+async def save(self):
+    # get the Elasticsearch client
+    es = get_es_client()
+
+    # save any autoupdate fields
+    {{AutoUpdateLines}}
+
+    # serialize & index
+    body = self.model_dump(by_alias=True, exclude={"id"})
+    resp = await es.index(
+        index="{{EntityLower}}"      # your lowercase alias
+        id=self.id,
+        document=body,
+        refresh="wait_for",
+    )
+    self.id = resp["_id"]
+    return self
