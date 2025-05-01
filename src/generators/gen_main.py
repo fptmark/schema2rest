@@ -48,10 +48,9 @@ def generate_main(schema_file, path_root, backend):
         backend=backend,
     )
         
-    helpers.write(path_root, backend, "", "main.py", rendered)
+    helpers.write(path_root, "", "main.py", rendered)
 
 if __name__ == "__main__":
-    # Original CLI handling: expect two positional arguments.
     if len(sys.argv) < 2:
         print("Usage: python gen_main.py <schema.yaml> <path_root> [<backend>]")
         sys.exit(1)
