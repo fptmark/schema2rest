@@ -30,7 +30,7 @@ def generate_db(schema_path, path_root, backend):
 
     rendered = templates.render("1", {"db_imports": db_imports, "models": models})
 
-    write(path_root, backend, "db.py", rendered)
+    write(path_root, backend, "", "db.py", rendered)
 
 
 if __name__ == "__main__":

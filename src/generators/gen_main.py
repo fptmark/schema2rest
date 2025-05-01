@@ -48,7 +48,7 @@ def generate_main(schema_file, path_root, backend):
         backend=backend,
     )
         
-    helpers.write(path_root, backend, "main.py", rendered)
+    helpers.write(path_root, backend, "", "main.py", rendered)
 
 if __name__ == "__main__":
     # Original CLI handling: expect two positional arguments.

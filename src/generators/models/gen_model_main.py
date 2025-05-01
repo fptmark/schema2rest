@@ -44,33 +44,25 @@ def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates
             base_field_lines.append(line)
             validator_lines = validator_lines + build_validator(field_name, info, schema)
 
-    # one blank line between each field decl
-    BaseFields = "\n".join(base_field_lines)
-    AutoFields = "\n".join(auto_field_lines)
-
     vars = {
         "Entity":           entity,
         "EntityLower":      entity.lower(),
         "Metadata":         pprint.pformat(metadata, indent=4),
-        "BaseFields":       BaseFields,
-        "AutoFields":       AutoFields,
+        "BaseFields":       base_field_lines, 
+        "AutoFields":       auto_field_lines, 
         "UniqueList":       json.dumps(e_def.get("unique", [])),
         "MappingsDict":     pprint.pformat(get_elastic_search_mapping(entity, fields, schema), indent=4),
     }
 
     # generate the save function if there are any autoUpdate fields
     if len(auto_update_lines) > 0:
-        vars["AutoUpdateLines"] =  "\n".join(auto_update_lines)
+        vars["AutoUpdateLines"] =  auto_update_lines 
         save_lines = templates.render("save", {"AutoUpdateLines": "\n".join(auto_update_lines)})
-        # save_lines = [ "async def save(self, *args, **kwargs):" ] + save_lines 
-        # save_lines.append("    return await super().save(*args, **kwargs)")
-        SaveFunction = "\n".join(f"{line}" for line in save_lines)
-        vars["SaveFunction"] = SaveFunction
+        vars["SaveFunction"] = save_lines
 
     # generate the validators if there are any 
     if len(validator_lines) > 0:
-        Validators  = "\n".join(f"{line}" for line in validator_lines)
-        vars["Validators"] = Validators
+        vars["Validators"] = validator_lines
 
     return vars
 
@@ -113,7 +105,7 @@ def main():
                 out.extend(rendered)
                 out.append("")   # blank line between template blocks
 
-            helpers.write(path_root, backend, f"{entity.lower()}_model.py", rendered)
+            helpers.write(path_root, backend, "models", f"{entity.lower()}_model.py", out)
 
 if __name__ == "__main__":
     main()

@@ -34,92 +34,46 @@ class Templates:
             raise RuntimeError(f"Template '{tpl_name}' not found")
         return self.templates[tpl_name]
     
-    def render(self, tpl_name: str, vars_map: Mapping[str, Union[str, List[str]]]):
+    def render( self, tpl_name: str, vars_map: Mapping[str, Union[str, List[str]]],) -> List[str]:
         """
-        Single‐pass {Key}→vars_map[Key] substitution.
+        Single-pass {{Key}}→vars_map[Key] substitution.
         - Error if tpl_name references a var not in vars_map.
-        - If a line is exactly "{Key}" and vars_map[Key]=="" or [], skip that line.
-        - If a line is exactly "{Key}" and vars_map[Key] is multiline (str with \n or List[str]),
-        split on \n or on list items and prefix each with the same indentation,
-        preserving any leading spaces in the var text.
+        - If a line is exactly '{{Key}}', the value may be a string or list:
+          • empty or empty list → skip line
+          • non-empty string  → split on '\n' and emit each non-empty line
+          • list of strings   → emit each non-empty item
+        - Inline placeholders (with other text on the line) expect only strings.
         """
         lines = self._get_template(tpl_name)
-        out: List[str] = []
+        output: List[str] = []
         for raw in lines:
             keys = PLACEHOLDER_PATTERN.findall(raw)
-            # ensure all placeholders exist
             missing = [k for k in keys if k not in vars_map]
             if missing:
                 raise KeyError(f"Template {tpl_name} references unknown vars: {missing}")
 
             stripped = raw.strip()
-            # standalone placeholder?
-            if len(keys) == 1 and stripped == f"{{{keys[0]}}}":
+            # standalone placeholder may be string or list
+            if len(keys) == 1 and stripped == f"{{{{{keys[0]}}}}}":
                 val = vars_map[keys[0]]
-                # normalize to list of lines
+                # normalize to list of lines or items
                 if isinstance(val, list):
-                    lines_to_emit = val
+                    items = val
                 else:
-                    lines_to_emit = val.splitlines()
-
-                if not lines_to_emit:
+                    items = [line for line in str(val).splitlines()]
+                if not items:
                     continue
-
                 indent = raw[: len(raw) - len(raw.lstrip())]
-                for vline in lines_to_emit:
-                    # skip truly empty strings
-                    if vline != "":
-                        out.append(indent + vline)
-                continue
+                for item in items:
+                    if item:
+                        output.append(indent + item)
+            else:
+                # inline: only string values
+                line = raw
+                for k in keys:
+                    replacement = str(vars_map[k])
+                    line = line.replace(f"{{{{{k}}}}}", replacement)
+                output.append(line)
 
-            # inline replacement
-            line = raw
-            for k in keys:
-                v = vars_map[k]
-                # if list, join into one string
-                if isinstance(v, list):
-                    v = "\n".join(v)
-                line = line.replace(f"{{{{{k}}}}}", v)
-            out.append(line)
-
-        return out
-
-
-    # def render(self, tpl_name: str, vars_map: Dict[str, str]):
-    #     """
-    #     Single‐pass {Key}→vars_map[Key] substitution.
-    #     - Error if tpl_name references a var not in vars_map.
-    #     - If a line is exactly "{Key}" and vars_map[Key]=="" skip that line.
-    #     - If a line is exactly "{Key}" and vars_map[Key] is multiline,
-    #       split on \n and prefix each with the same indentation,
-    #       preserving any leading spaces in the var text.
-    #     """
-    #     lines = self._get_template(tpl_name)
-    #     out: List[str] = []
-    #     for raw in lines:
-    #         keys = PLACEHOLDER_PATTERN.findall(raw)
-    #         missing = [k for k in keys if k not in vars_map]
-    #         if missing:
-    #             continue
-    
-    #         stripped = raw.strip()
-    #         # standalone placeholder?
-    #         if len(keys) == 1 and stripped == f"{{{keys[0]}}}":
-    #             val = vars_map[keys[0]]
-    #             if val == "":
-    #                 continue
-    #             indent = raw[: len(raw) - len(raw.lstrip()) ]
-    #             for vline in val.splitlines():
-    #                 # only skip truly empty lines, keep lines that are spaces
-    #                 if vline != "":
-    #                     out.append(indent + vline)
-    #             continue
-    
-    #         # inline replacement
-    #         line = raw
-    #         for k in keys:
-    #             line = line.replace(f"{{{k}}}", vars_map[k])
-    #         out.append(line)
-    
-    #     return out
+        return output
     

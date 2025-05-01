@@ -12,7 +12,7 @@ class UniqueValidationError(Exception):
     def __str__(self):
         return f"Unique constraint violation for fields {self.fields}: {self.query}"
 
-class {{Entity}}Document):
+class {{Entity}}(Document):
     {{BaseFields}}
     {{AutoFields}}
     

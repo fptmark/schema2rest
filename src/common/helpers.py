@@ -145,11 +145,13 @@ def valid_backend(backend: str) -> bool:
     else:
         return True
 
-def write(path_root: str, backend: str, file_name: str, lines: str | List[str]):
+def write(path_root: str, backend: str, component_dir: str, file_name: str, lines: str | List[str]):
     if isinstance(lines, List):
         lines = "\n".join(lines)
 
-    dir = Path(path_root) / backend / "app"
+    dir = Path(path_root) / backend / "app" 
+    if len(component_dir) > 0: 
+        dir = dir / component_dir 
     dir.mkdir(parents=True, exist_ok=True)
     
     with open(dir / file_name, "w") as f:
