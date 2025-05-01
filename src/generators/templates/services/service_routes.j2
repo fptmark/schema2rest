@@ -5,9 +5,6 @@ from typing import Dict, Any
 # Dynamically import the concrete service implementation.
 from {{ module_path }} import {{ concrete_class }} as {{ alias }}
 
-# Dynamically import all response models from the base_model.
-from {{ base_model_module }} import *
-
 # For metadata access
 from app.models.{{ entity|lower }}_model import {{ entity }}
 

@@ -1,11 +1,12 @@
 from pydantic import BaseModel
 from typing import Optional
+from services.framework.decorators import expose_response
 
-def expose_response(endpoint: str):
-    def decorator(cls):
-        cls._expose_response = {"endpoint": endpoint}
-        return cls
-    return decorator
+# def expose_response(endpoint: str):
+#     def decorator(cls):
+#         cls._expose_response = {"endpoint": endpoint}
+#         return cls
+    # return decorator
 
 class AuthResponse(BaseModel):
     success: bool

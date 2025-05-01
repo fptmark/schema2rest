@@ -5,14 +5,13 @@ import json
 import time
 import redis.asyncio as redis
 from fastapi import Request
-from ..base_router import BaseAuth, BaseCookieStore
 
 # Configuration constants – these could be loaded from config.json later.
 SESSION_TTL = 3600              # 1 hour in seconds
 NEAR_EXPIRY_THRESHOLD = 300     # 5 minutes threshold
 
 # --- Concrete Cookie Store Implementation Using Async Redis ---
-class RedisCookieStore(BaseCookieStore):
+class RedisCookieStore:
     def __init__(self, host: str = "127.0.0.1", port: int = 6379, db: int = 0):
         self.host = host
         self.port = port
@@ -56,7 +55,7 @@ class RedisCookieStore(BaseCookieStore):
         return session_data
 
 # --- Concrete CookiesAuth Implementation Using Async Redis ---
-class CookiesAuth(BaseAuth):
+class CookiesAuth:
     # Default cookie configuration; can be overridden via config.
     cookie_name = "sessionId"
     cookie_options = {

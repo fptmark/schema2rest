@@ -2,12 +2,16 @@
 import sys
 import os
 import importlib
+import importlib.util
 import inspect
 from pathlib import Path
+from typing import Dict
 from jinja2 import Environment, FileSystemLoader
+from pydantic import BaseModel
 
 # Add parent directory to path to allow importing helpers
 from common import Schema
+from common.helpers import write
 
 def get_jinja_env() -> Environment:
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -22,106 +26,136 @@ def get_jinja_env() -> Environment:
     return env
 
 def generate_service_routes(schema_file: str, path_root: str):
-    print("Generating service routes...")
+
+    abstract_service_dir = Path(__file__).resolve().parent / "../services"  # Where the abstract services are located
+    # output_dir = Path(path_root) / "app" / "services"
+
     schema = Schema(schema_file)
     env = get_jinja_env()
     entities = schema.concrete_entities()
 
+    print("Generating service routes...")
     # Process each entity from the schema.
     for entity_name, entity_def in entities.items():
-        inherits = entity_def.get("inherits", [])
-        for base in inherits:
-            if isinstance(base, dict) and "service" in base:
-                for service in base["service"]:
-                    if not isinstance(service, str):
-                        continue
-                    parts = service.split('.')
-                    if len(parts) < 2:
-                        print(f"Service string '{service}' is not in expected format; skipping.")
-                        continue
+        services = entity_def.get("service", [])
+        for service in services:
+            service_parts = service.split('.')
+            if len(service_parts) < 2:
+                print(f"Service string '{service}' is not in expected format; expected x.y; skipping.")
+                continue
 
-                    # Preserve these 4 lines exactly:
-                    base_module_path = "services." + parts[0] + ".base_router"
-                    base_class = f"Base{parts[0].capitalize()}"
-                    concrete_module_path = "services." + service  # e.g., "services.auth.cookies.redis"
-                    concrete_class = parts[1].capitalize() + "Auth"  # e.g., "CookiesAuth"
+            provider_name = service_parts[-1]
+            concrete_class_name = provider_name.capitalize()
+            alias_name = f"{concrete_class_name}_{entity_name.lower()}"
 
-                    # Compute the base_model_module for response models.
-                    base_model_module = "services." + parts[0] + ".base_model"
+            service_dir = abstract_service_dir / service_parts[0]   # location of contracts for the service
+            base_router_path = service_dir / "base_router.py"
+            base_model_path = service_dir / "base_model.py"
+            concrete_module_path = abstract_service_dir / Path(*service_parts[:-1]) / f"{provider_name}_provider.py" # abstract service provider
 
-                    # Import the abstract service class from base_router.
-                    try:
-                        mod = importlib.import_module(base_module_path)
-                        svc_class = getattr(mod, base_class)
-                    except Exception as e:
-                        print(f"Error importing {base_module_path}.{base_class}: {e}")
-                        continue
+            if not base_router_path.exists() or not base_model_path.exists() or not concrete_module_path.exists():
+                print(f"Skipping {entity_name} - missing one of the required files.")
+                continue
 
-                    # Import the base_model module and build a mapping of endpoint -> response model.
-                    response_model_mapping = {}
-                    try:
-                        bm_mod = importlib.import_module(base_model_module)
-                        for name, cls in inspect.getmembers(bm_mod, inspect.isclass):
-                            if hasattr(cls, "_expose_response"):
-                                # _expose_response is a dict with key "endpoint"
-                                ep = getattr(cls, "_expose_response").get("endpoint")
-                                if ep:
-                                    response_model_mapping[ep] = cls.__name__
-                    except Exception as e:
-                        print(f"Error importing {base_model_module}: {e}")
-                        response_model_mapping = {}
+            # Load all classes
+            router_classes = load_classes_from_path(base_router_path)
+            model_classes = load_classes_from_path(base_model_path)
+            provider_classes = load_classes_from_path(concrete_module_path)
 
-                    # Inspect the abstract service class for methods decorated with _expose_endpoint.
-                    endpoints = []
-                    for name, func in inspect.getmembers(svc_class, predicate=inspect.isfunction):
-                        if hasattr(func, "_expose_endpoint"):
-                            metadata = getattr(func, "_expose_endpoint")
-                            if not metadata.get("route"):
-                                metadata["route"] = "/" + name.lower()
-                            # For response model, try to match by endpoint route
-                            resp_model = response_model_mapping.get(metadata["route"], None)
-                            if resp_model:
-                                metadata["response_model"] = resp_model
-                            else:
-                                # Fallback: if no matching response model found, leave empty.
-                                metadata["response_model"] = ""
-                            endpoints.append({
-                                "name": name,
-                                "metadata": metadata
-                            })
-                    if not endpoints:
-                        continue
+            # Build lookup
+            model_class_names = {
+                cls.__name__
+                for cls in model_classes
+                if isinstance(cls, type) and issubclass(cls, BaseModel)
+            }
+            if not model_class_names:
+                raise Exception(f"No valid Pydantic models found in {base_model_path}")
 
-                    # Prepare output directory: routes/services/<top_service>
-                    out_dir = os.path.join(path_root, "routes", "services", parts[0])
-                    os.makedirs(out_dir, exist_ok=True)
-                    out_filename = f"{entity_name.lower()}_{parts[0].lower()}_routes.py"
-                    out_path = os.path.join(out_dir, out_filename)
-                    
-                    rendered = env.get_template("service_routes.j2").render(
-                        entity=entity_name,
-                        top_service=parts[0],
-                        alias=parts[0].capitalize(),
-                        module_path=concrete_module_path,  # use concrete module for service calls
-                        concrete_class=concrete_class,
-                        base_model_module=base_model_module,
-                        endpoints=endpoints
-                    )
-                    with open(out_path, "w") as f:
-                        f.write(rendered)
-                    print(f"Generated routes for entity '{entity_name}' using service '{service}' at {out_path}")
+                          # Build endpoint contract from base_router
+            contract_methods = {}
+            for router_cls in router_classes:
+                for name, method in inspect.getmembers(router_cls, predicate=inspect.isfunction):
+                    metadata = getattr(method, "_endpoint_metadata", None)
+                    if metadata:
+                        contract_methods[name] = {
+                            "signature": inspect.signature(method),
+                            "metadata": metadata
+                        }
+
+            # Build map of provider methods
+            provider_methods = {
+                name: inspect.signature(method)
+                for cls in provider_classes
+                for name, method in inspect.getmembers(cls, predicate=inspect.isfunction)
+            }
+
+            # Enforce contract conformance
+            endpoints = []
+            for name, contract in contract_methods.items():
+                if name not in provider_methods:
+                    raise Exception(f"Provider is missing required method: {name}")
+
+                contract_sig = contract["signature"]
+                provider_sig = provider_methods[name]
+
+                if len(contract_sig.parameters) != len(provider_sig.parameters):
+                    raise Exception(f"Signature mismatch on {name}: {contract_sig} != {provider_sig}")
+
+                for param in contract_sig.parameters.values():
+                    if isinstance(param.annotation, type) and issubclass(param.annotation, BaseModel):
+                        if param.annotation.__name__ not in model_class_names:
+                            raise Exception(f"Model {param.annotation.__name__} not found in base_model for method {name}")
+
+                endpoints.append({
+                    "name": name,
+                    "metadata": contract["metadata"]
+                })
+
+            # Final rendering
+            module_path = ".".join(["app", "services"] + service_parts)
+
+            rendered = env.get_template("service_routes.j2").render(
+                entity=entity_name,
+                module_path=module_path,
+                concrete_class=concrete_class_name,
+                alias=alias_name,
+                top_service=service_parts[0],
+                endpoints=endpoints
+            )
+            
+            output_dir = os.path.join(path_root, "services")
+            write(path_root, output_dir, f"{alias_name.lower()}.py", rendered)
+            print(f"Generated service routes for entity '{entity_name}' using service '{service}' at {output_dir}")
+
+
+
+def load_classes_from_path(file_path: Path):
+    """Dynamically load all classes from a file path."""
+    module_name = file_path.stem
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+
+    if spec is None or spec.loader is None:
+        print(f"ERROR: Could not load spec from {file_path}")
+        return []
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return [cls for _, cls in inspect.getmembers(module, inspect.isclass)]
+
+
+def get_signature_map(cls) -> Dict[str, inspect.Signature]:
+    return {
+        name: inspect.signature(method)
+        for name, method in inspect.getmembers(cls, predicate=inspect.isfunction)
+    }
+
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
+    if len(sys.argv) < 3:
         print("Usage: python gen_service_routes.py <schema.yaml> <path_root>")
         sys.exit(1)
     schema_file = sys.argv[1]
     path_root = os.path.abspath(sys.argv[2])
-    
-    services_path = os.path.join(path_root, "app")
-    if os.path.isdir(services_path):
-        path_root = services_path
-    if path_root not in sys.path:
-        sys.path.insert(0, path_root)
     
     generate_service_routes(schema_file, path_root)

@@ -1,13 +1,14 @@
 # app/services/auth/base.py
 from abc import ABC, abstractmethod
 from fastapi import Request
+from services.framework.decorators import expose_endpoint
 
-def expose_endpoint(method: str, route: str):
-    def decorator(func):
-        # Attach metadata to the function
-        func._expose_endpoint = {"method": method, "route": route}
-        return func
-    return decorator
+# def expose_endpoint(method: str, route: str):
+#     def decorator(func):
+#         # Attach metadata to the function
+#         func._expose_endpoint = {"method": method, "route": route}
+#         return func
+#     return decorator
 
 class BaseAuth(ABC):
     @abstractmethod
