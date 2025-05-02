@@ -83,11 +83,12 @@ async def startup_event():
     logger.info('Startup event called')
     logger.info(f"Running in {'development' if config.get('environment', 'production') == 'development' else 'production'} mode")
 
-    uri = config.get('{{ backend }}' + '_uri', '')
+    backend = config.get('backend', 'mongo')
+    uri = config.get(backend + '_uri', '')
     db = config.get('db_name', '')
-    logger.info(f"Connecting to {{ backend }} at {uri} with db {db}")
+    logger.info(f"Connecting to {backend} at {uri} with db {db}")
     await Database.init(uri, db)
-    logger.info(f"Connected to {{ backend }}")
+    logger.info(f"Connected to {backend}")
 
     # Initialize the auth service from the hard-coded import.
     print(f'>>> Initializing service auth.cookies.redis')

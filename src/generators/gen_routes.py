@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
-from common.helpers import write, valid_backend
+from common.helpers import write
 from common import Schema
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -21,7 +21,7 @@ def get_jinja_env() -> Environment:
     # Optionally add built-ins here if needed
     return env
 
-def generate_routes(schema_file: str, path_root: str, backend: str):
+def generate_routes(schema_file: str, path_root: str):
 
     print("Generating routes...")
     schema = Schema(schema_file)
@@ -36,13 +36,11 @@ def generate_routes(schema_file: str, path_root: str, backend: str):
     print("Route generation complete!")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python gen_routes.py <schema.yaml> <path_root> [<backend>]")
+    if len(sys.argv) != 2:
+        print("Usage: python gen_routes.py <schema.yaml> <path_root>")
         sys.exit(1)
 
     schema_file = sys.argv[1]
     path_root = sys.argv[2]
-    backend = sys.argv[3] if len(sys.argv) > 3 else "mongo"
 
-    if valid_backend(backend):
-        generate_routes(schema_file, path_root, backend)
+    generate_routes(schema_file, path_root)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from typing import Dict, Any, List, Optional, Tuple
 from pathlib import Path
-from .model_utils import get_pattern, dictionary_resolve
+from .model_utils import get_pattern
 
 from common import Schema     # ← use your Schema wrapper
 

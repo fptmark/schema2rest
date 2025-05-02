@@ -10,7 +10,7 @@ import pprint
 import common.template as template
 import common.helpers as helpers
 from common.schema import Schema
-from utilities import utils
+# from utilities import utils
 
 BASE_DIR = Path(__file__).resolve().parent
 
