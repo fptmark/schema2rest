@@ -152,8 +152,8 @@ def get_signature_map(cls) -> Dict[str, inspect.Signature]:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python gen_service_routes.py <schema.yaml> <path_root>")
+    if len(sys.argv) != 2:
+        print(f"Usage: python {sys.argv[0]} <schema.yaml> <output_path>")
         sys.exit(1)
     schema_file = sys.argv[1]
     path_root = os.path.abspath(sys.argv[2])

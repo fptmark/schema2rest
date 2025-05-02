@@ -101,12 +101,12 @@ def generate_models(schema_file: str, path_root: str, backend: str):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python gen_models_main.py <schema.yaml> <path_root> [<backend>]")
+        print(f"Usage: python {sys.argv[0]} <schema.yaml> <output_path> [<backend>]")
         sys.exit(1)
     
     schema_file = sys.argv[1]
     path_root = sys.argv[2]
-    backend = sys.argv[3] if len(sys.argv) > 3 else "mongo"
+    backend = sys.argv[3] if len(sys.argv) >= 3 else "mongo"
 
     if helpers.valid_backend(backend):
         generate_models(schema_file, path_root, backend)

@@ -11,22 +11,28 @@ from src.generators.gen_routes import generate_routes
 from src.generators.gen_service_routes import generate_service_routes
 from src.generators.gen_db import generate_db
 from src.generators.gen_main import generate_main
+from src.convert.schemaConvert import convert_schema
 
-def generate_code(schema_file, path_root, backend):
+def generate_code(schema_file, output_dir, backend):
     """
     Main entry point for code generation
     """
         
     try:
-        # main and routes are the same for all backends
-        generate_main(schema_file, path_root)
-        generate_routes(schema_file, path_root)
-        generate_db(schema_file, path_root, backend)
-        generate_models(schema_file, path_root, backend)
-        generate_service_routes(schema_file, path_root)
-        
-        print("Code generation completed successfully!")
-        return 0
+        yaml = convert_schema(schema_file)
+        if yaml:
+            generate_main(yaml, output_dir)
+            generate_routes(yaml, output_dir)
+            generate_db(yaml, output_dir, backend)
+            generate_models(yaml, output_dir, backend)
+            generate_service_routes(yaml, output_dir)
+            
+            print("Code generation completed successfully!")
+            return 0
+        else:
+            print("Error: Schema conversion failed.")
+            return 1
+
     except Exception as e:
         print(f"Error during code generation: {e}")
         import traceback
@@ -36,10 +42,12 @@ def generate_code(schema_file, path_root, backend):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python generate_code.py <schema.json> <output_dir> [<backend>]")
+        print("Usage: python generate_code.py <schema.mmd> <output_path> [<backend>]")
         sys.exit(1)
-    backend = sys.argv[3] if len(sys.argv) > 3 else "mongo"
+
+    backend = sys.argv[3] if len(sys.argv) >= 3 else "mongo"
     if not valid_backend(backend):
         print(f"Invalid backend: {backend}. Supported backends are: mongo, postgres.")
         sys.exit(1)
+
     results = generate_code(sys.argv[1], sys.argv[2], backend)

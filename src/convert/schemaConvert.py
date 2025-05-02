@@ -2,9 +2,9 @@ from pathlib import Path
 import sys
 import traceback
 import yaml
-import os
 from typing import Dict, Set, Any, List, Tuple
-from .decorators import Decorator
+from src.common.helpers import valid_backend
+from src.convert.decorators import Decorator
 
 
 ### Define a custom formatter for quoting strings in the YAML output 
@@ -179,16 +179,16 @@ def generate_yaml_object(entities, relationships, dictionaries, services, includ
     
     return output_obj
 
-def convert_schema(schema_path, output_path):
+def convert_schema(schema_path):
     """
     Convert a schema MMD file to YAML
     
     Args:
         schema_path: Path to the schema MMD file
-        output_path: Path to the output directory or file
+        backend: Backend type (e.g., "mongo")
         
     Returns:
-        True if conversion was successful, False otherwise
+        yaml file if conversion was successful, None otherwise
     """
     try:
         # Configure YAML for quoted strings
@@ -209,9 +209,7 @@ def convert_schema(schema_path, output_path):
         output_obj = generate_yaml_object(entities, relationships, dictionaries, services, includes)
         
         # Determine output file path
-        output_file = output_path
-        if os.path.isdir(output_path):
-            output_file = os.path.join(output_path, "schema.yaml")
+        output_file = schema_path.replace(".mmd", ".yaml") 
         
         # Write YAML file
         print(f"Writing YAML to {output_file}")
@@ -219,34 +217,28 @@ def convert_schema(schema_path, output_path):
             yaml.dump(output_obj, f, sort_keys=False, default_flow_style=False, Dumper=NoAliasDumper)
         
         print(f"Schema conversion completed successfully")
-        return True
+        return output_file
     
     except Exception as e:
         print(f"Error converting schema: {str(e)}")
         traceback.print_exc()
-        return False
+        return None
 
 def main():
-    """Command-line entry point"""
-    if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <schema.mmd> <output.yaml or directory>")
+    success = None
+
+    if len(sys.argv) != 1:
+        print(f"Usage: {sys.argv[0]} <schema.mmd>")
         return 1
     
-    schema_path = sys.argv[1]
-    output_path = sys.argv[2]
-    
     # Support both absolute and relative paths
-    schema_path_obj = Path(schema_path)
-    output_path_obj = Path(output_path)
+    schema_path_obj = Path(sys.argv[1])
     
     if not schema_path_obj.is_absolute():
         schema_path_obj = Path.cwd() / schema_path_obj
         
-    if not output_path_obj.is_absolute():
-        output_path_obj = Path.cwd() / output_path_obj
-    
     # Convert schema
-    success = convert_schema(str(schema_path_obj), str(output_path_obj))
+    success = convert_schema(str(schema_path_obj))
     
     return 0 if success else 1
 

@@ -50,7 +50,7 @@ def generate_main(schema_file, path_root):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python gen_main.py <schema.yaml> <path_root>")
+        print(f"Usage: python {sys.argv[0]} <schema.yaml> <output_path>")
         sys.exit(1)
     
     schema_file = sys.argv[1]
