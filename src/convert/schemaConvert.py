@@ -227,7 +227,7 @@ def convert_schema(schema_path):
 def main():
     success = None
 
-    if len(sys.argv) != 1:
+    if len(sys.argv) != 2:
         print(f"Usage: {sys.argv[0]} <schema.mmd>")
         return 1
     

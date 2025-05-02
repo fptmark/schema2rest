@@ -36,7 +36,7 @@ def generate_routes(schema_file: str, path_root: str):
     print("Route generation complete!")
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    if len(sys.argv) != 3:
         print(f"Usage: python {sys.argv[0]} <schema.yaml> <output_path>")
         sys.exit(1)
 

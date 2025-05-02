@@ -83,7 +83,7 @@ def generate_models(schema_file: str, path_root: str, backend: str):
 
     templates = template.Templates(BASE_DIR / "..", "models", backend)
 
-    print(f"Generating models in {path_root}/{backend}")
+    print(f"Generating models in {path_root}")
     schema = Schema(schema_file)
     for entity, defs in schema.concrete_entities().items():
         if defs.get("abstract", False):
@@ -97,10 +97,11 @@ def generate_models(schema_file: str, path_root: str, backend: str):
             out.extend(rendered)
             out.append("")   # blank line between template blocks
 
-            helpers.write(path_root, "models", f"{entity.lower()}_model.py", out)
+            helpers.write(path_root, "models", f"{entity.lower()}_model.py", out, False)
+        print(f"Generated {entity.lower()}_model.py")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
+    if len(sys.argv) < 3:
         print(f"Usage: python {sys.argv[0]} <schema.yaml> <output_path> [<backend>]")
         sys.exit(1)
     

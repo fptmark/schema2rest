@@ -11,6 +11,7 @@ class Templates:
 
     # base_dir is the path where the template directory exists
     def __init__(self, base_dir: Path, component: str, backend: str):
+        self.templates = {}
         template_dir = Path(base_dir) / "templates" / component / backend
         names = []
         for fn in template_dir.iterdir():

@@ -49,7 +49,7 @@ def generate_main(schema_file, path_root):
     write(path_root, "", "main.py", rendered)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    if len(sys.argv) != 3:
         print(f"Usage: python {sys.argv[0]} <schema.yaml> <output_path>")
         sys.exit(1)
     

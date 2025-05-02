@@ -152,7 +152,7 @@ def get_signature_map(cls) -> Dict[str, inspect.Signature]:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    if len(sys.argv) != 3:
         print(f"Usage: python {sys.argv[0]} <schema.yaml> <output_path>")
         sys.exit(1)
     schema_file = sys.argv[1]
