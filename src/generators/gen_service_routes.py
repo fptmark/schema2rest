@@ -5,7 +5,7 @@ import importlib
 import importlib.util
 import inspect
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel
 
@@ -28,7 +28,6 @@ def get_jinja_env() -> Environment:
 def generate_service_routes(schema_file: str, path_root: str):
 
     abstract_service_dir = Path(__file__).resolve().parent / "../services"  # Where the abstract services are located
-    # output_dir = Path(path_root) / "app" / "services"
 
     schema = Schema(schema_file)
     env = get_jinja_env()
@@ -39,8 +38,8 @@ def generate_service_routes(schema_file: str, path_root: str):
     for entity_name, entity_def in entities.items():
         services = entity_def.get("service", [])
         for service in services:
-            service_parts = service.split('.')
-            if len(service_parts) < 2:
+            service_parts: List[str] = service.split('.')
+            if service_parts and len(service_parts) < 2:
                 print(f"Service string '{service}' is not in expected format; expected x.y; skipping.")
                 continue
 
@@ -112,20 +111,23 @@ def generate_service_routes(schema_file: str, path_root: str):
                 })
 
             # Final rendering
-            module_path = ".".join(["app", "services"] + service_parts)
+            module_path = ".".join(["app", "services", service_parts[-1]])
+
+            service_class = list(reversed(service_parts[:-1]))  # exclude the last
+            service_class = "".join(part.capitalize() for part in service_class)
 
             rendered = env.get_template("service_routes.j2").render(
                 entity=entity_name,
                 module_path=module_path,
-                concrete_class=concrete_class_name,
+                service_class=service_class,
                 alias=alias_name,
                 top_service=service_parts[0],
                 endpoints=endpoints
             )
             
-            output_dir = os.path.join(path_root, "services")
-            write(path_root, output_dir, f"{alias_name.lower()}.py", rendered)
-            print(f"Generated service routes for entity '{entity_name}' using service '{service}' at {output_dir}")
+            # output_dir = os.path.join(path_root, "services")
+            write(path_root, "services", f"{alias_name.lower()}.py", rendered)
+            print(f"Generated service routes for entity '{entity_name}' using service '{service}' at {path_root}/services/{alias_name.lower()}.py")
 
 
 

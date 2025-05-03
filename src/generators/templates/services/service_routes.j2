@@ -3,7 +3,7 @@ from fastapi import APIRouter, Request, Response, HTTPException, Query
 from typing import Dict, Any
 
 # Dynamically import the concrete service implementation.
-from {{ module_path }} import {{ concrete_class }} as {{ alias }}
+from {{ module_path }}_provider import {{ concrete_class }} as {{ alias }}
 
 # For metadata access
 from app.models.{{ entity|lower }}_model import {{ entity }}

@@ -212,12 +212,12 @@ def convert_schema(schema_path):
         output_file = schema_path.replace(".mmd", ".yaml") 
         
         # Write YAML file
-        print(f"Writing YAML to {output_file}")
+        print(f"Writing YAML to {output_file}.  Generated {len(entities)} entities")
         with open(output_file, 'w') as f:
             yaml.dump(output_obj, f, sort_keys=False, default_flow_style=False, Dumper=NoAliasDumper)
         
         print(f"Schema conversion completed successfully")
-        return output_file
+        return output_file if len(entities) else None
     
     except Exception as e:
         print(f"Error converting schema: {str(e)}")

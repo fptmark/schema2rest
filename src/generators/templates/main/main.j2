@@ -8,7 +8,7 @@ from app.db import Database
 {# --- Dynamic Import of Service Classes --- #}
 {% for service in services %}
 {% set tokens = service.split('.') %}
-from app.services.{{ service }} import {{ tokens[1]|capitalize }}{{ tokens[0]|capitalize }} as {{ tokens[0]|capitalize }}
+from app.services.{{ tokens[-1] }}_provider import {{ tokens[1]|capitalize }}{{ tokens[0]|capitalize }} as {{ tokens[0]|capitalize }}
 {% endfor %}
 
 {# --- Dynamic Import of Route Routers for Entities --- #}
