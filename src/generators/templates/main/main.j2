@@ -7,8 +7,10 @@ from app.db import Database
 
 {# --- Dynamic Import of Service Classes --- #}
 {% for service in services %}
-{% set tokens = service.split('.') %}
-from app.services.{{ tokens[-1] }}_provider import {{ tokens[1]|capitalize }}{{ tokens[0]|capitalize }} as {{ tokens[0]|capitalize }}
+{% set service_parts = service.split('.') %}
+{% set reversed_parts = service_parts[:-1] | reverse %}
+{% set service_class = reversed_parts | map('capitalize') | join('') %}
+from app.services.{{ service_parts[-1] }}_provider import {{ service_class }} as {{ service_parts[0]|capitalize }}
 {% endfor %}
 
 {# --- Dynamic Import of Route Routers for Entities --- #}

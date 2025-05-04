@@ -119,13 +119,10 @@ def generate_service_routes(schema_file: str, path_root: str):
             rendered = env.get_template("service_routes.j2").render(
                 entity=entity_name,
                 module_path=module_path,
-                service_class=service_class,
-                alias=alias_name,
-                top_service=service_parts[0],
+                service=service,
                 endpoints=endpoints
             )
             
-            # output_dir = os.path.join(path_root, "services")
             write(path_root, "services", f"{alias_name.lower()}.py", rendered)
             print(f"Generated service routes for entity '{entity_name}' using service '{service}' at {path_root}/services/{alias_name.lower()}.py")
 

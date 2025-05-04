@@ -3,7 +3,10 @@ from fastapi import APIRouter, Request, Response, HTTPException, Query
 from typing import Dict, Any
 
 # Dynamically import the concrete service implementation.
-from {{ module_path }}_provider import {{ concrete_class }} as {{ alias }}
+{% set service_parts = service.split('.') %}
+{% set reversed_parts = service_parts[:-1] | reverse %}
+{% set service_class = reversed_parts | map('capitalize') | join('') %}
+from {{ module_path }}_provider import {{ service_class }}
 
 # For metadata access
 from app.models.{{ entity|lower }}_model import {{ entity }}
@@ -36,7 +39,7 @@ async def {{ ep.name }}_endpoint(request: Request, response: Response, include_m
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid request body")
     try:
-        result = await {{ alias }}().{{ ep.name }}(payload)
+        result = await {{ service_class }}().{{ ep.name }}(payload)
         return wrap_response(result, include_metadata)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -50,4 +53,4 @@ async def get_{{ entity|lower }}_metadata():
     return {{ entity }}.get_metadata()
 
 def init_router(app):
-    app.include_router(router, prefix="/{{ entity | lower }}/{{ top_service | lower }}", tags=["{{ entity }}"])
+    app.include_router(router, prefix="/{{ entity | lower }}/{{ service[0] | lower }}", tags=["{{ entity }}"])
