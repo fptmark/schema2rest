@@ -53,4 +53,4 @@ async def get_{{ entity|lower }}_metadata():
     return {{ entity }}.get_metadata()
 
 def init_router(app):
-    app.include_router(router, prefix="/{{ entity | lower }}/{{ service[0] | lower }}", tags=["{{ entity }}"])
+    app.include_router(router, prefix="/{{ entity | lower }}/{{ service_parts[0] | lower }}", tags=["{{ entity }}"])
