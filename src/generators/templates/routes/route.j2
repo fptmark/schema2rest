@@ -29,7 +29,7 @@ async def create_{{ entity|lower }}(item: {{ entity}}Create):
 async def get_all_{{ entity|lower }}s():
     logging.info("Received request to fetch all {{ entity|lower }}s.")
     try:
-        docs = await {{ entity}}.find_all().to_list()
+        docs = await {{ entity}}.find_all()
         logging.info(f"Fetched {len(docs)} {{ entity|lower }}(s) successfully.")
     except Exception as e:
         msg = str(e).replace('\n', ' ')
