@@ -1,14 +1,16 @@
 async def save(self):
     # get the Elasticsearch client
-    es = get_es_client()
-
+    es = Database.get_es_client()
+    if not es:
+        raise RuntimeError("Elasticsearch client not initialized — did you forget to call Database.init()?")
+ 
     # save any autoupdate fields
     {{AutoUpdateLines}}
 
     # serialize & index
     body = self.model_dump(by_alias=True, exclude={"id"})
     resp = await es.index(
-        index="{{EntityLower}}"      # your lowercase alias
+        index=self.__index__,
         id=self.id,
         document=body,
         refresh="wait_for",

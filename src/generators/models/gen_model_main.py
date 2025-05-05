@@ -57,7 +57,7 @@ def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates
     # generate the save function if there are any autoUpdate fields
     if len(auto_update_lines) > 0:
         vars["AutoUpdateLines"] =  auto_update_lines 
-        save_lines = templates.render("save", {"AutoUpdateLines": auto_update_lines})
+        save_lines = templates.render("save", vars)
         vars["SaveFunction"] = save_lines
 
     # generate the validators if there are any 

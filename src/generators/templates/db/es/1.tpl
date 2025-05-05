@@ -1,20 +1,18 @@
-# app/db.py
-
-import os
 from elasticsearch import AsyncElasticsearch
 
-_ES_URL = os.getenv("ES_URL", "http://localhost:9200")
 
-# one global client instance
-_es_client: AsyncElasticsearch | None = None
+class Database:
+    _es_client: AsyncElasticsearch | None = None
+    _es_url: str = ""
+    _es_dbname: str = "" 
+
+    @staticmethod
+    async def init(url: str, dbname: str): 
+        Database._es_url = url
+        Database._es_dbname = dbname
+        Database._es_client = AsyncElasticsearch(hosts=[Database._es_url])
 
 
-def get_es_client() -> AsyncElasticsearch:
-    """
-    Return a singleton AsyncElasticsearch client, connecting to ES_URL
-    if not already initialised.
-    """
-    global _es_client
-    if _es_client is None:
-        _es_client = AsyncElasticsearch(_ES_URL)
-    return _es_client
+    @staticmethod
+    def get_es_client() -> AsyncElasticsearch | None:
+        return Database._es_client
