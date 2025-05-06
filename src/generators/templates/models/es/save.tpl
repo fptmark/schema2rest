@@ -1,3 +1,11 @@
+@property
+def _id(self) -> Optional[str]:
+    return self.id
+
+@_id.setter
+def _id(self, value: Optional[str]) -> None:
+    self.id = value
+
 async def save(self):
     # get the Elasticsearch client
     es = Database.get_es_client()

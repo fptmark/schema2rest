@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Self, ClassVar
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from beanie import PydanticObjectId
+from elasticsearch import NotFoundError
 import re
 from db import Database
 import app.utils as helpers
@@ -50,5 +51,8 @@ class {{Entity}}({{Entity}}BaseModel):
         es = Database.get_es_client()
         if not es:
             raise RuntimeError("Elasticsearch client not initialized — did you forget to call Database.init()?")
-        result = await es.search(index=cls.__index__, query={"match_all": {}}, size=1000)
-        return [cls._from_es_hit(hit) for hit in result["hits"]["hits"]] #type: ignore[return-value]
+        try:
+            result = await es.search(index=cls.__index__, query={"match_all": {}}, size=1000)
+            return [cls._from_es_hit(hit) for hit in result["hits"]["hits"]] #type: ignore[return-value]
+        except NotFoundError:
+            return []  # Return empty list if index doesn't exist
