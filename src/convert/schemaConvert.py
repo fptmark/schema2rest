@@ -81,14 +81,21 @@ class SchemaParser:
             elif "||--o{" in line:
                 words = line.split("||--o{")
                 source = words[0].strip()
-                source_lower = words[0].strip().lower()
                 pos = words[1].find(":")
                 target = words[1][:pos].strip() if pos >= 0 else words[1].strip()
                 self.relationships.append((source, target))
 
                 # Auto add a foreign key into each entity based on a relationship 
                 entity = self.entities[target]
-                entity["fields"][source_lower + "Id"] = { "type": "ObjectId", "required": True, "displayName": source_lower + "Id", "readOnly": True }
+                fields = entity.setdefault("fields", {})
+                field_name = source.lower() + "Id"
+                value = { "type": "ObjectId", "required": True} #, "displayName": source_lower + "Id", "readOnly": True }
+
+                # if the field already exists, merge; otherwise just set it
+                if field_name in fields and isinstance(fields[field_name], dict):
+                    fields[field_name].update(value)       # merge‑in (overwrite dup keys)
+                else:
+                    fields[field_name] = value     
 
         dictionaries = decorator.get_objects()
 
