@@ -41,11 +41,11 @@ def generate_code(schema_file, output_dir, backend):
     return 0
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
+    if len(sys.argv) < 3:
         print("Usage: python generate_code.py <schema.mmd> <output_path> [<backend>]")
         sys.exit(1)
 
-    backend = sys.argv[3] if len(sys.argv) >= 3 else "mongo"
+    backend = "mongo" if len(sys.argv) < 4 else sys.argv[3]
     if not valid_backend(backend):
         print(f"Invalid backend: {backend}. Supported backends are: mongo, postgres.")
         sys.exit(1)

@@ -113,17 +113,6 @@ def get_entities_metadata():
 {% endfor %}
     ]
 
-def deep_merge_dicts(dest, override):
-    for key, value in override.items():
-        if (
-            key in dest
-            and isinstance(dest[key], dict)
-            and isinstance(value, dict)
-        ):
-            deep_merge_dicts(dest[key], value)
-        else:
-            dest[key] = value
-
 if __name__ == '__main__':
     import uvicorn
     logger.info("Welcome to the Event Management System")
