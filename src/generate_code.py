@@ -4,14 +4,14 @@ Code generation script - Generates models, routes, etc. from schema
 """
 import sys
 from pathlib import Path
-from src.common.helpers import valid_backend
+from common.helpers import valid_backend
 
-from src.generators.models.gen_model_main import generate_models
-from src.generators.gen_routes import generate_routes
-from src.generators.gen_service_routes import generate_service_routes
-from src.generators.gen_db import generate_db
-from src.generators.gen_main import generate_main
-from src.convert.schemaConvert import convert_schema
+from generators.models.gen_model_main import generate_models
+from generators.gen_routes import generate_routes
+from generators.gen_service_routes import generate_service_routes
+from generators.gen_db import generate_db
+from generators.gen_main import generate_main
+from convert.schemaConvert import convert_schema
 
 def generate_code(schema_file, base_output_dir, backend):
     """
