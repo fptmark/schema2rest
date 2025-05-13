@@ -109,7 +109,7 @@ def build_validator(fname: str, info: Dict[str, Any], schema: Schema) -> List[st
 
     return lines
 
-def type_annotation(info: Dict[str, Any], schema):
+def type_annotation(info: Dict[str, Any], backend, schema):
     """Return (python_type, field_init) for a schema field."""
     t = info.get("type")
     required = info.get("required", False)
@@ -132,7 +132,7 @@ def type_annotation(info: Dict[str, Any], schema):
     elif t == "Array[String]":
         base = "List[str]"
     elif t == "ObjectId":
-        base = "PydanticObjectId"
+        base = "PydanticObjectId" if backend == "mongo" else "str"
     else:
         base = "Any"
 

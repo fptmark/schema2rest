@@ -2,7 +2,6 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Self, ClassVar
 from pydantic import BaseModel, Field, ConfigDict, field_validator
-from beanie import PydanticObjectId
 from elasticsearch import NotFoundError
 import re
 from app.db import Database
@@ -28,7 +27,6 @@ class {{Entity}}(BaseModel):
 
     model_config = ConfigDict(
         populate_by_name=True,
-        json_encoders={PydanticObjectId: str},
     )
 
     @classmethod

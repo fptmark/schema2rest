@@ -9,8 +9,8 @@ from common import Schema
 
 BASE_DIR = Path(__file__).resolve().parent
 
-def get_jinja_env() -> Environment:
-    template_dir = os.path.join(BASE_DIR, "templates", "routes")
+def get_jinja_env(backend: str) -> Environment:
+    template_dir = os.path.join(BASE_DIR, "templates", "routes", backend)
 
     env = Environment(
         loader=FileSystemLoader(template_dir),
@@ -25,7 +25,7 @@ def generate_routes(schema_file: str, path_root: str, backend: str):
 
     print("Generating routes...")
     schema = Schema(schema_file)
-    env = get_jinja_env()
+    env = get_jinja_env(backend)
     route_template = env.get_template('route.j2')
 
     for entity_name, entity_def in schema.concrete_entities().items():

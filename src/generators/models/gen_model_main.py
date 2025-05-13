@@ -15,7 +15,7 @@ from common.schema import Schema
 BASE_DIR = Path(__file__).resolve().parent
 
 
-def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates, schema: Schema):
+def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates, backend: str, schema: Schema):
     """Collect all of the placeholders your templates expect."""
     fields = e_def.get("fields", {})
     operations = e_def.get("operations", "")
@@ -33,7 +33,7 @@ def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates
     validator_lines: List[str] = []    # validators for fields that are not autoGenerate or autoUpdate
 
     for field_name, info in fields.items():
-        base, init = type_annotation(info, schema)
+        base, init = type_annotation(info, backend, schema)
         line = f"{field_name}: {base} = {init}"
         if info.get("autoGenerate", False):
             auto_field_lines.append(line)
@@ -89,7 +89,7 @@ def generate_models(schema_file: str, path_root: str, backend: str):
         if defs.get("abstract", False):
             continue
 
-        vars_map = build_vars(entity, defs, templates, schema)
+        vars_map = build_vars(entity, defs, templates, backend, schema)
         out: List[str] = []
 
         for i in range(1, len(templates.list())):
