@@ -30,7 +30,8 @@ def get_validator(info: Dict[str, Any], schema: Schema) -> List[str]:
 
 def build_validator(fname: str, info: Dict[str, Any], schema: Schema) -> List[str]:
     lines = []
-    base, init = type_annotation(info, schema)
+    convert_v = None
+    # base, init = type_annotation(info, schema)
 
     # Always add ISODate pre-validator if applicable
     if info.get("type") == "ISODate":
@@ -51,20 +52,25 @@ def build_validator(fname: str, info: Dict[str, Any], schema: Schema) -> List[st
     mn    = info.get("ge")
     mx    = info.get("le")
 
-    if any((pat, enum, mnlen is not None, mxlen is not None, mn is not None, mx is not None)):
+    if any(v is not None for v in (pat, enum, mnlen, mxlen, mn, mx)):
+        if info['type'] == "Integer":   # ToDo: only applies to mn/mx.
+            convert_v = "int(v)"
+        elif info['type'] in ['Number', 'Float']:
+            convert_v = "float(v)"
+
         lines.append(f"@field_validator('{fname}', mode='before')")
         lines.append(f"def validate_{fname}(cls, v):")
         lines.append(f"    _custom = {{}}")
 
-        if mnlen is not None:
+        if mnlen:
             lines.append(f"    if v is not None and len(v) < {mnlen}:")
             lines.append(f"        raise ValueError('{fname} must be at least {mnlen} characters')")
 
-        if mxlen is not None:
+        if mxlen:
             lines.append(f"    if v is not None and len(v) > {mxlen}:")
             lines.append(f"        raise ValueError('{fname} must be at most {mxlen} characters')")
 
-        if pat is not None:
+        if pat:
             if isinstance(pat, dict):
                 regex, pm = get_pattern(info, schema)
             else:
@@ -76,7 +82,7 @@ def build_validator(fname: str, info: Dict[str, Any], schema: Schema) -> List[st
             else:
                 lines.append(f"        raise ValueError('{fname} is not in the correct format')")
 
-        if enum is not None:
+        if enum:
             if isinstance(enum, dict):
                 allowed = enum.get("values")
                 em = enum.get("message")
@@ -91,11 +97,11 @@ def build_validator(fname: str, info: Dict[str, Any], schema: Schema) -> List[st
                 lines.append(f"        raise ValueError('{fname} must be one of ' + ','.join(allowed))")
 
         if mn is not None:
-            lines.append(f"    if v is not None and v < {mn}:")
+            lines.append(f"    if v is not None and {convert_v} < {mn}:")
             lines.append(f"        raise ValueError('{fname} must be at least {mn}')")
 
         if mx is not None:
-            lines.append(f"    if v is not None and v > {mx}:")
+            lines.append(f"    if v is not None and {convert_v} > {mx}:")
             lines.append(f"        raise ValueError('{fname} must be at most {mx}')")
 
         lines.append(f"    return v")
