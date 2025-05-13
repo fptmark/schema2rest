@@ -30,12 +30,12 @@ def generate_db(schema_path, path_root, backend):
 
     rendered = templates.render("1", {"db_imports": db_imports, "models": models})
 
-    write(path_root, "", "db.py", rendered)
+    write(path_root, backend, "", "db.py", rendered)
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print(f"Usage: python {sys.argv[0]} <schema.yaml> <output_path>")
+        print(f"Usage: python {sys.argv[0]} <schema.yaml> <output_path> [<backend>]")
         sys.exit(1)
     
     schema_file = sys.argv[1]

@@ -97,8 +97,8 @@ def generate_models(schema_file: str, path_root: str, backend: str):
             out.extend(rendered)
             out.append("")   # blank line between template blocks
 
-            helpers.write(path_root, "models", f"{entity.lower()}_model.py", out, False)
-        print(f"Generated {entity.lower()}_model.py")
+        helpers.write(path_root, backend, "models", f"{entity.lower()}_model.py", out)
+        # print(f"Generated {entity.lower()}_model.py")
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:

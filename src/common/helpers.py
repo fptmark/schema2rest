@@ -15,11 +15,11 @@ def valid_backend(backend: str) -> bool:
     else:
         return True
 
-def write(path_root: str, component_dir: str, file_name: str, lines: str | List[str], display: bool = True) -> None:
+def write(path_root: str, backend: str, component_dir: str, file_name: str, lines: str | List[str], display: bool = True) -> None:
     if isinstance(lines, List):
         lines = "\n".join(lines)
 
-    dir = Path(path_root) / "app" 
+    dir = Path(path_root) / backend / "app" 
     if len(component_dir) > 0: 
         dir = dir / component_dir 
 
