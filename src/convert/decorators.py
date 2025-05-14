@@ -122,7 +122,8 @@ class Decorator:
         elif decorator in [VALIDATE, UI]:
             self._add_field_data(decorator, entity_name, field_name, text)
         elif decorator == UNIQUE:
-            self._add_unique(entity_name, field_name)
+            # Handle single or mutilple unique fields
+            self._add_unique(entity_name, f"{field_name}{text}")
 
 
     def _process_entity_decorations(self, decorator: str, entity_name: str, text: str):
