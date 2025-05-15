@@ -86,7 +86,7 @@ class SchemaParser:
                 self.relationships.append((source, target))
 
                 # Auto add a foreign key into each entity based on a relationship 
-                entity = self.entities[target]
+                entity = self.entities[target.lower()]
                 fields = entity.setdefault("fields", {})
                 field_name = source.lower() + "Id"
                 value = { "type": "ObjectId", "required": True} #, "displayName": source_lower + "Id", "readOnly": True }
@@ -108,7 +108,7 @@ class SchemaParser:
     
     def _handle_entity_definition(self, line):
         """Process an entity definition line"""
-        self.current_entity = line.split()[0].strip()
+        self.current_entity = line.split()[0].strip().lower()
         self.entities[self.current_entity] = {
             "fields": {},
             "relationships": []
@@ -166,6 +166,8 @@ def generate_yaml_object(entities, relationships, dictionaries, services, includ
     # Prepare relationships for output
     top_relationships = []
     for source, target in relationships:
+        source = source.lower()
+        target = target.lower()
         top_relationships.append({"source": source, "target": target})
         
         # Add relationship to entity if it exists

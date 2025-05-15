@@ -230,7 +230,7 @@ class Decorator:
             entity['abstract'] = True
         elif decorator == INCLUDES:
             # add a copy of the abstraction fields to the current entity.  set the displayAfterField so they all appear after the core entity fields
-            abstraction = self.entities.get(value)
+            abstraction = self.entities.get(value.lower())
             if abstraction and FIELDS in abstraction:
                 fields_copy = copy.deepcopy(abstraction[FIELDS])
 
@@ -250,7 +250,7 @@ class Decorator:
             data = json5.loads(value)
             if data and isinstance(data, dict):
                 key, value = next(iter(data.items()))
-                self._add_field_data(decorator, entity_name, key, value)
+                self._add_field_data(decorator, entity_name.lower(), key, value)
         elif decorator == UI or decorator == SELECTOR:
             data = json5.loads(value)
             entity.setdefault(UI_METADATA, {}).update(data)
