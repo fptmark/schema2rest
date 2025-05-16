@@ -12,8 +12,9 @@ from generators.gen_service_routes import generate_service_routes
 from generators.gen_db import generate_db
 from generators.gen_main import generate_main
 from convert.schemaConvert import convert_schema
+from tools.mongo.update_indicies import update_indexes
 
-def generate_code(schema_file, base_output_dir, backend):
+def generate_code(schema_file, base_output_dir, backend, config_file=None):
     """
     Main entry point for code generation
     """
@@ -26,6 +27,10 @@ def generate_code(schema_file, base_output_dir, backend):
             generate_db(yaml, base_output_dir, backend)
             generate_models(yaml, base_output_dir, backend)
             generate_service_routes(yaml, base_output_dir, backend)
+            if config_file:
+                update_indexes(yaml, config_file)
+            else:
+                print("No config file provided, skipping index update.")
             
             print("Code generation completed successfully!")
             return 0
@@ -42,7 +47,7 @@ def generate_code(schema_file, base_output_dir, backend):
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print("Usage: python generate_code.py <schema.mmd> <base_output_path> [<backend>]")
+        print("Usage: python generate_code.py <schema.mmd> <base_output_path> [<backend>] [<config_file>]")
         sys.exit(1)
 
     backend = "mongo" if len(sys.argv) < 4 else sys.argv[3]
@@ -50,4 +55,4 @@ if __name__ == "__main__":
         print(f"Invalid backend: {backend}. Supported backends are: mongo, es.")
         sys.exit(1)
 
-    results = generate_code(sys.argv[1], sys.argv[2], backend)
+    results = generate_code(sys.argv[1], sys.argv[2], backend, None if len(sys.argv) < 5 else sys.argv[4])
