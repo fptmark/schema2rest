@@ -70,6 +70,15 @@ SAMPLE_SIZE      = 500     # docs to sample per collection
 # ───────────────────────────────────────────────────── helper functions ───
 
 def infer_pattern(values: List[str]):
+    """
+    Infer regex pattern for a set of string values
+    
+    Args:
+        values (List[str]): List of string values to analyze
+    
+    Returns:
+        Tuple[str, str] or None: (pattern, error_message) if a pattern is found, else None
+    """
     for _key, (rx, msg) in CANDIDATE_PATTERNS.items():
         if all(rx.fullmatch(v) for v in values if isinstance(v, str)):
             return rx.pattern, msg
@@ -77,17 +86,86 @@ def infer_pattern(values: List[str]):
 
 
 def infer_enum(values: List[Any]):
+    """
+    Infer enum values from a list of values
+    
+    Args:
+        values (List[Any]): List of values to analyze for enum potential
+    
+    Returns:
+        List or None: Sorted list of enum values if criteria are met, else None
+    """
+    # Filter out None values
     cleaned = [v for v in values if v is not None]
-    if not cleaned:
+    
+    # Require at least 20 records
+    if len(cleaned) < 20:
         return None
+    
+    # Count frequency of values
     freq = Counter(cleaned)
-    if any(c < ENUM_MIN_FREQ for c in freq.values()):
+    
+    # Check enum constraints
+    # 1. Unique values <= 5
+    # 2. Each value appears at least 10 times
+    # 3. Enum covers at least 98% of non-null rows
+    if (len(freq) > 5 or 
+        any(c < ENUM_MIN_FREQ for c in freq.values()) or 
+        sum(freq.values()) / len(values) < ENUM_COVERAGE):
         return None
-    if len(freq) > ENUM_MAX_SIZE:
-        return None
-    if sum(freq.values()) / len(values) < ENUM_COVERAGE:
-        return None
+    
     return sorted(freq)
+
+
+def analyze_field_validation(values: List[Any], dtype: str):
+    """
+    Comprehensive field validation analysis
+    
+    Args:
+        values (List[Any]): List of field values
+        dtype (str): Data type of the field
+    
+    Returns:
+        Dict: Validation rules for the field
+    """
+    if not values:
+        return None
+    
+    validation_rules = {}
+    
+    # String specific validations
+    if dtype == 'String':
+        # Pattern detection
+        pattern_info = infer_pattern(values)
+        if pattern_info:
+            pat_src, pat_msg = pattern_info
+            validation_rules['pattern'] = {
+                'regex': pat_src.replace("\\", "\\\\"),
+                'message': pat_msg
+            }
+        
+        # Enum detection
+        enum_vals = infer_enum(values)
+        if enum_vals:
+            validation_rules['enum'] = list(enum_vals)
+        
+        # String length
+        if len(values) >= 100:
+            lengths = [len(str(v)) for v in values]
+            validation_rules['length'] = {
+                'min': min(lengths),
+                'max': max(lengths)
+            }
+    
+    # Numeric validations
+    elif dtype in ['Integer', 'Number']:
+        if len(values) >= 100:
+            validation_rules['range'] = {
+                'min': min(values),
+                'max': max(values)
+            }
+    
+    return validation_rules
 
 
 def bson_to_dtype(types: Set[str]):
@@ -167,6 +245,14 @@ def generate_mmd(config_path: str):
                 meta["types"].add(type(v).__name__)
                 if isinstance(v, (str, int, float, bool)) and len(meta["values"]) < SAMPLE_SIZE:
                     meta["values"].append(v)
+        
+        # Additional validation rule analysis
+        for field, meta in per_field.items():
+            if meta["values"]:
+                dtype = bson_to_dtype(meta["types"])
+                validation_rules = analyze_field_validation(meta["values"], dtype)
+                if validation_rules:
+                    meta["validation"] = validation_rules
 
         entity_fields[coll_name] = per_field
 
@@ -259,17 +345,38 @@ def generate_mmd(config_path: str):
                 continue
             dtype = bson_to_dtype(meta["types"])
             pattern_info = infer_pattern(meta["values"]) if dtype == "String" else None
-            validate_parts = []
-            if pattern_info:
-                pat_src, pat_msg = pattern_info
-                pat_src = pat_src.replace("\\", "\\\\")
-                validate_parts.append(
-                    f'pattern: {{ regex: "{pat_src}", message: "{pat_msg}" }}'
-                )
-            validate_str = f" %% @validate {{ {', '.join(validate_parts)} }}" if validate_parts else ""
-            enum_vals = infer_enum(meta["values"]) if dtype == "String" else None
-            enum_str = f" %% @enum {{ {', '.join(map(str, enum_vals))} }}" if enum_vals else ""
-            lines.append(f"        {dtype} {field}{validate_str}{enum_str}")
+            # Use validation rules from metadata if available
+            validation_str = ""
+            validation = meta.get("validation", {})
+            
+            if validation:
+                validate_parts = []
+                if 'pattern' in validation:
+                    pat = validation['pattern']
+                    validate_parts.append(
+                        f'pattern: {{ regex: "{pat["regex"]}", message: "{pat["message"]}" }}'
+                    )
+                
+                if 'enum' in validation:
+                    validate_parts.append(
+                        f'enum: {{ {", ".join(map(str, validation["enum"]))} }}'
+                    )
+                
+                if 'length' in validation:
+                    length = validation['length']
+                    validate_parts.append(
+                        f'length: {{ min: {length["min"]}, max: {length["max"]} }}'
+                    )
+                
+                if 'range' in validation:
+                    range_val = validation['range']
+                    validate_parts.append(
+                        f'range: {{ min: {range_val["min"]}, max: {range_val["max"]} }}'
+                    )
+                
+                validation_str = f" %% @validate {{ {', '.join(validate_parts)} }}" if validate_parts else ""
+            
+            lines.append(f"        {dtype} {field}{validation_str}")
 
         # ---- decorators (include + unique) ----
         decorators: List[str] = []
