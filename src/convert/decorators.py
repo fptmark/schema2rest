@@ -40,8 +40,8 @@ class Decorator:
         self.entities = entities
         self.dictionaries = {}
         
-    
-    def has_decorator(self, text: str) -> bool:
+    @staticmethod
+    def has_decorator(text: str) -> bool:
         """
         Check if a string contains a decorator
         
@@ -242,6 +242,12 @@ class Decorator:
             # get the abstraction fields and copy them to the current entity
             abstraction = self.entities.get(words[0])
             if abstraction and FIELDS in abstraction:
+                # copy the indexes, relationships and services first
+                entity.setdefault('unique', []).extend(abstraction.get('unique', []))
+                entity.setdefault('relationships', []).extend(abstraction.get('relationships', []))
+                entity.setdefault('service', []).extend(abstraction.get('service', []))
+
+                # Next copy the fields
                 fields_copy = copy.deepcopy(abstraction[FIELDS])
 
                 # set the display order unless it was set to '' in the UI metadata

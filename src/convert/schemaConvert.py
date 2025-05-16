@@ -4,7 +4,7 @@ import traceback
 import yaml
 from typing import Dict, Set, Any, List, Tuple
 from src.common.helpers import valid_backend
-from src.convert.decorators import Decorator
+from src.convert.decorators import Decorator, ABSTRACT
 
 
 ### Define a custom formatter for quoting strings in the YAML output 
@@ -52,8 +52,9 @@ class SchemaParser:
                 continue
             
             # Entity definition
-            if self._is_entity_definition(line):
-                self._handle_entity_definition(line)
+            if self._process_entity_definition(line):
+                continue
+                # self._handle_entity_definition(line)
             
             # Entity end
             elif line == "}":
@@ -62,7 +63,7 @@ class SchemaParser:
             # Skip if not in entity or just a comment (not decorator)
             elif self.current_entity:
                 if line[0:2] == '%%':
-                    if decorator.has_decorator(line):
+                    if Decorator.has_decorator(line):
                         decorator.process_decorations(line, self.current_entity)
 
                 else:
@@ -71,10 +72,10 @@ class SchemaParser:
                         field_name = words[1]
                         field_type = words[0]
                         self.entities[self.current_entity]["fields"][field_name] = { "type": field_type }
-                        if decorator.has_decorator(line):
+                        if Decorator.has_decorator(line):
                             decorator.process_decorations(line, self.current_entity, field_name, field_type)
 
-            elif decorator.has_decorator(line):
+            elif Decorator.has_decorator(line):
                 decorator.process_decorations(line, self.current_entity)
                 
             # Process relationships
@@ -106,14 +107,21 @@ class SchemaParser:
         """Check if the line is an entity definition"""
         return line.endswith("{") and not line.startswith("%")
     
-    def _handle_entity_definition(self, line):
+    def _process_entity_definition(self, line) -> bool:
         """Process an entity definition line"""
-        self.current_entity = line.split()[0].strip()
+        words = line.split()
+        if len(words) < 2 or words[1] != '{':
+            return False
+        self.current_entity = words[0]
         self.entities[self.current_entity] = {
             "fields": {},
             "relationships": []
         }
+        if Decorator.has_decorator(line):
+            if words[3] == ABSTRACT:
+                self.entities[self.current_entity]["abstract"] = True
         print(f"Processing entity: {self.current_entity}")
+        return True
     
     
 def parse_mmd(lines):
