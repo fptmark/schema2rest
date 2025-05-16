@@ -20,7 +20,7 @@ class {{Entity}}(BaseModel):
     {{BaseFields}}
     {{AutoFields}}
  
-    __ui_metadata__: ClassVar[Dict[str, Any]] = {{Metadata}}
+    _metadata: ClassVar[Dict[str, Any]] = {{Metadata}}
 
     class Settings:
         name = "{{EntityLower}}"
@@ -31,7 +31,7 @@ class {{Entity}}(BaseModel):
 
     @classmethod
     def get_metadata(cls) -> Dict[str, Any]:
-        return helpers.get_metadata(cls.__ui_metadata__)
+        return helpers.get_metadata(cls._metadata)
  
     @classmethod
     async def find_all(cls) -> Sequence[Self]:
