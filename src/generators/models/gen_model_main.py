@@ -47,7 +47,7 @@ def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates
     vars = {
         "Entity":           entity,
         "EntityLower":      entity.lower(),
-        "Metadata":         pprint.pformat(metadata, indent=4),
+        "Metadata":         pprint.pformat(metadata, indent=4, sort_dicts=False),
         "BaseFields":       base_field_lines, 
         "AutoFields":       auto_field_lines, 
         "UniqueList":       json.dumps(e_def.get("unique", [])),
