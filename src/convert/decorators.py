@@ -229,18 +229,28 @@ class Decorator:
         if decorator == ABSTRACT:
             entity['abstract'] = True
         elif decorator == INCLUDES:
-            # add a copy of the abstraction fields to the current entity.  set the displayAfterField so they all appear after the core entity fields
-            abstraction = self.entities.get(value.lower())
+            # add a copy of the abstraction fields to the current entity.  
+            # By default, the displayAfterField will bet set so they all appear after the core entity fields using negative numbers
+            # This can be overridden by setting the displayAfterField in the UI metadata
+            words = value.split()
+            display_after = None
+            if self.has_decorator(value) and words[2] == UI:    # UI decorator found
+                ui = json5.loads(' '.join(words[3:]))   
+                if isinstance(ui, dict):
+                    display_after = ui.get('displayAfterField', None)
+
+            # get the abstraction fields and copy them to the current entity
+            abstraction = self.entities.get(words[0])
             if abstraction and FIELDS in abstraction:
                 fields_copy = copy.deepcopy(abstraction[FIELDS])
 
-                # set the display order - the included entity is after the core entity fields
-                # entity_names = list(entity[FIELDS].keys())
-                # prior_field = entity_names[-1]
-                prior_field = -1    # special naming for included entity fields
-                for field_name, field_value in fields_copy.items():
-                    field_value.setdefault(UI_METADATA, {}).update({'displayAfterField': str(prior_field)})
-                    prior_field = prior_field - 1
+                # set the display order unless it was set to '' in the UI metadata
+                if display_after is None or (len(display_after) > 0):   # if it hasn't been set
+                    prior_field = -1    # special naming for included entity field
+                    daf = display_after if display_after is not None else str(prior_field)
+                    for field_name, field_value in fields_copy.items():
+                        field_value.setdefault(UI_METADATA, {}).update({'displayAfterField': daf})
+                        prior_field = prior_field - 1
 
                 entity.setdefault(FIELDS, []).update(fields_copy)
             else:
@@ -250,7 +260,7 @@ class Decorator:
             data = json5.loads(value)
             if data and isinstance(data, dict):
                 key, value = next(iter(data.items()))
-                self._add_field_data(decorator, entity_name.lower(), key, value)
+                self._add_field_data(decorator, entity_name, key, value)
         elif decorator == UI or decorator == SELECTOR:
             data = json5.loads(value)
             entity.setdefault(UI_METADATA, {}).update(data)
