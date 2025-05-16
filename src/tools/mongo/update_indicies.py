@@ -9,11 +9,15 @@ import json
 # sys.path.append(str(Path(__file__).parent))
 from common import Schema
 
-def update_indexes(schema, config):
+def update_indexes(schema_file: str, config_file: str):
+    schema = Schema(schema_file)
+    config = load_system_config(config_file)
+
     client = pymongo.MongoClient(config.get("db_uri", "mongodb://localhost:27017"))
     db = client[config.get("db_name", "default_db")]
 
     for entity, data in schema.concrete_entities().items():
+        entity = entity.lower()
         collection = db[entity]
         print(f"Processing collection: {entity}")
 
@@ -75,7 +79,7 @@ def update_indexes(schema, config):
                     
                     if matching_indexes:
                         print("  ✓ Index verified successfully")
-                        print("    Index details:", json.dumps(matching_indexes[0], indent=2))
+                        # print("    Index details:", json.dumps(matching_indexes[0], indent=2))
                     else:
                         print("  ✗ Failed to verify index creation")
                 
@@ -95,6 +99,4 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python update_indexes.py <schema_path>")
         sys.exit(1)
-    my_schema = Schema(sys.argv[1])
-    config = load_system_config('config.json' if len(sys.argv) < 3 else sys.argv[2])
-    update_indexes(my_schema, config)
+    update_indexes(sys.argv[1], 'config.json' if len(sys.argv) < 3 else sys.argv[2])
