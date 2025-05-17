@@ -60,8 +60,22 @@ def build_validator(fname: str, info: Dict[str, Any], schema: Schema) -> List[st
 
         lines.append(f"@field_validator('{fname}', mode='before')")
         lines.append(f"def validate_{fname}(cls, v):")
-        lines.append(f"    _custom = {{}}")
+        # lines.append(f"    _custom = {{}}")
 
+        if info['type'] == "Currency":
+            lines.append(f"    if v is None: return None")
+            lines.append(f"    parsed = helpers.parse_currency(v)")
+            lines.append(f"    if parsed is None:")
+            lines.append(f"        raise ValueError('{fname} must be a valid currency')")
+            if mn:
+                lines.append(f"    if parsed < {mn}:")
+                lines.append(f"        raise ValueError('{fname} must be at least {mn}')")
+            if mx:
+                lines.append(f"    if parsed > {mx}:")
+                lines.append(f"        raise ValueError('{fname} must be at most {mx}')")
+            lines.append(f"    return parsed")
+            return lines
+            
         if mnlen:
             lines.append(f"    if v is not None and len(v) < {mnlen}:")
             lines.append(f"        raise ValueError('{fname} must be at least {mnlen} characters')")
@@ -123,7 +137,7 @@ def type_annotation(info: Dict[str, Any], backend, schema):
         base = "str"
     elif t == "Integer":
         base = "int"
-    elif t == "Number":
+    elif t == "Number" or t == "Currency":
         base = "float"
     elif t == "Boolean":
         base = "bool"
