@@ -51,7 +51,9 @@ class Templates:
             keys = PLACEHOLDER_PATTERN.findall(raw)
             missing = [k for k in keys if k not in vars_map]
             if missing:
-                raise KeyError(f"Template {tpl_name} references unknown vars: {missing}")
+                print(f"*** Warning: Template {tpl_name} references unknown vars: {missing}. ")
+                continue
+                # raise KeyError(f"Template {tpl_name} references unknown vars: {missing}")
 
             stripped = raw.strip()
             # standalone placeholder may be string or list
