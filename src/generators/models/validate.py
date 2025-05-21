@@ -67,10 +67,10 @@ def build_validator(fname: str, info: Dict[str, Any], schema: Schema) -> List[st
             lines.append(f"    parsed = helpers.parse_currency(v)")
             lines.append(f"    if parsed is None:")
             lines.append(f"        raise ValueError('{fname} must be a valid currency')")
-            if mn:
+            if mn is not None:
                 lines.append(f"    if parsed < {mn}:")
                 lines.append(f"        raise ValueError('{fname} must be at least {mn}')")
-            if mx:
+            if mx is not None:
                 lines.append(f"    if parsed > {mx}:")
                 lines.append(f"        raise ValueError('{fname} must be at most {mx}')")
             lines.append(f"    return parsed")
