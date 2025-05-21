@@ -16,14 +16,14 @@ INCLUDES = "@include"
 SERVICE = "@service"
 UI = "@ui"
 OPERATION = "@operations"
-SELECTOR = "@selector"
+SHOW = "@show"
 
 OPERATIONS = ["create", "read", "update", "delete"]
 
 # All supported decorators
 COMMON_DECORATORS = [UI, UNIQUE]
 FIELD_DECORATORS = COMMON_DECORATORS + [VALIDATE]
-ENTITY_DECORATORS = COMMON_DECORATORS + [SERVICE, OPERATION, ABSTRACT, INCLUDES, SELECTOR]
+ENTITY_DECORATORS = COMMON_DECORATORS + [SERVICE, OPERATION, ABSTRACT, INCLUDES, SHOW]
 ALL_DECORATORS = FIELD_DECORATORS + ENTITY_DECORATORS + [DICTIONARY]
 
 
@@ -143,7 +143,7 @@ class Decorator:
                 self._add_field_data(decorator, entity_name, words[0], ' '.join(words[1:]))
                 return
 
-        if decorator in [ ABSTRACT, INCLUDES, SERVICE, UI, SELECTOR]:
+        if decorator in [ ABSTRACT, INCLUDES, SERVICE, UI, SHOW]:
             self._add_entity_decoration(decorator, entity_name, text)
         elif decorator == UNIQUE:
             self._add_unique(entity_name, text)
@@ -179,43 +179,28 @@ class Decorator:
     # Note: Selector is different.  It is processed like an entity decorator but in fact it is a field decorations
     # This is due to the fact that it affects a generated field (foreign key) due to a defined relationship
     def _add_field_data(self, decorator, entity_name, field_name, value):
-        if decorator == SELECTOR:
-            field_name  = field_name.lower() + "Id"
+        field_name = "_id" if field_name.lower() == "id" else field_name
+        # remove trailing comma for mutliple decorators on a line
+        if value.endswith(','):
+            value = value[:-1]
 
-            entity = self.entities[entity_name]
-            fields = entity[FIELDS] 
-            field =fields.setdefault(field_name, {})
-            field.setdefault( SELECTOR[1:], value )
+        try:
+            data = json5.loads(value)
+        except:
+            print(f'*** Error parsing line {value}')
+            sys.exit(-1)
+        if decorator == VALIDATE or self._validatate_ui_attributes(data):
+            if isinstance(data, dict):
 
-        else:
-            field_name = "_id" if field_name.lower() == "id" else field_name
-            # remove trailing comma for mutliple decorators on a line
-            if value.endswith(','):
-                value = value[:-1]
+                entity = self.entities[entity_name]
+                fields = entity[FIELDS] 
+                field =fields.setdefault(field_name, {})
 
-            try:
-                data = json5.loads(value)
-            except:
-                print(f'*** Error parsing line {value}')
-                sys.exit(-1)
-            if decorator == VALIDATE or self._validatate_ui_attributes(data):
-                if isinstance(data, dict):
-                    # Handle dictioary lookup - do it in gen_models instead
-                    # if 'pattern' in data and 'regex' in data['pattern']:
-                    #     regex = data['pattern']['regex']
-                    #     if regex.startswith("dictionary="):
-                    #         words = regex.split('=')[1].split('.')
-                    #         data['pattern']['regex'] = self.dictionaries[words[0]][words[1]]
-
-                    entity = self.entities[entity_name]
-                    fields = entity[FIELDS] 
-                    field =fields.setdefault(field_name, {})
-
-                    # UI Metadata goes in a subsection
-                    if decorator == UI:
-                        field.setdefault(UI_METADATA, {}).update(data)
-                    else:
-                        field.update(data)
+                # UI Metadata goes in a subsection
+                if decorator == UI:
+                    field.setdefault(UI_METADATA, {}).update(data)
+                else:
+                    field.update(data)
 
 
     # Handles unique from a field or entity defn
@@ -262,12 +247,35 @@ class Decorator:
             else:
                 print(f'*** Error: abstraction fields for {value} not found')
                 sys.exit(-1)
-        elif decorator == SELECTOR:
-            data = json5.loads(value)
-            if data and isinstance(data, dict):
-                key, value = next(iter(data.items()))
-                self._add_field_data(decorator, entity_name, key, value)
-        elif decorator == UI or decorator == SELECTOR:
+        elif decorator == SHOW:
+            # Create show <foreign_table> {json}
+            words = value.split()
+            try:
+                data = json5.loads(' '.join(words[1:]))
+            except Exception as err:
+                print(f'*** Error parsing line {value}.  Details: {err}')
+                sys.exit(-1)
+            if isinstance(data, dict):
+                key = words[0].lower() + "Id"
+                fields = entity.setdefault('fields', {} )
+                key_field = fields.setdefault(key, {})
+                show = key_field.setdefault(decorator[1:], {})
+
+                # get the endpoint or use the default based on the field name
+                endpoint = data.get('endpoint', words[0]).lower()
+                show['endpoint'] = endpoint
+                displayInfo = show.setdefault('displayInfo', [])
+
+                # get the display Pages
+                for cfg in data.get('displayInfo', []):
+                    displayPages = cfg.get('displayPages', None)
+                    displayFields = cfg.get('fields', None)
+                    if displayPages and displayFields:
+                        displayInfo.append({"displayPages": displayPages, "fields": displayFields})
+                    else:
+                        print(f'*** Error: displayInfo for @show {words[0]} missing data.  Line is {decorator} {value}')
+
+        elif decorator == UI:
             data = json5.loads(value)
             entity.setdefault(UI_METADATA, {}).update(data)
         elif decorator == OPERATION:
