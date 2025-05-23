@@ -191,14 +191,16 @@ class Decorator:
             sys.exit(-1)
         if decorator == VALIDATE or self._validatate_ui_attributes(data):
             if isinstance(data, dict):
-
                 entity = self.entities[entity_name]
                 fields = entity[FIELDS] 
                 field =fields.setdefault(field_name, {})
 
-                # UI Metadata goes in a subsection
+                # Process UI
                 if decorator == UI:
-                    field.setdefault(UI_METADATA, {}).update(data)
+                    for key, value in data.items():
+                        if key != 'show' or field.get('type') == 'ObjectId':
+                            field.setdefault(UI_METADATA, {}).update({key: value})
+
                 else:
                     field.update(data)
 
@@ -248,7 +250,18 @@ class Decorator:
                 print(f'*** Error: abstraction fields for {value} not found')
                 sys.exit(-1)
         elif decorator == SHOW:
+            self._process_show(entity, value)
             # Create show <foreign_table> {json}
+
+        elif decorator == UI:
+            data = json5.loads(value)
+            entity.setdefault(UI_METADATA, {}).update(data)
+        elif decorator == OPERATION:
+            entity.setdefault(decorator[1:], value.strip())
+        else:
+            entity.setdefault(decorator[1:], []).append(value.strip())
+
+    def _process_show(self, entity, value: str):
             words = value.split()
             try:
                 data = json5.loads(' '.join(words[1:]))
@@ -259,7 +272,7 @@ class Decorator:
                 key = words[0].lower() + "Id"
                 fields = entity.setdefault('fields', {} )
                 key_field = fields.setdefault(key, {})
-                show = key_field.setdefault(decorator[1:], {})
+                show = key_field.setdefault(SHOW, {})
 
                 # get the endpoint or use the default based on the field name
                 endpoint = data.get('endpoint', words[0]).lower()
@@ -273,16 +286,7 @@ class Decorator:
                     if displayPages and displayFields:
                         displayInfo.append({"displayPages": displayPages, "fields": displayFields})
                     else:
-                        print(f'*** Error: displayInfo for @show {words[0]} missing data.  Line is {decorator} {value}')
-
-        elif decorator == UI:
-            data = json5.loads(value)
-            entity.setdefault(UI_METADATA, {}).update(data)
-        elif decorator == OPERATION:
-            entity.setdefault(decorator[1:], value.strip())
-        else:
-            entity.setdefault(decorator[1:], []).append(value.strip())
-
+                        print(f'*** Error: displayInfo for @show {words[0]} missing data.  Line is {value}')
     # Handles dictionary
     def _process_dictionary(self, text: str):
         """
@@ -322,7 +326,8 @@ class Decorator:
             "readOnly": [],
             "displayAfterField": [],
             "displayPages": [],
-            "clientEdit": []
+            "clientEdit": [],
+            "show": [],
         }
 
         for key, value in attributes.items():
