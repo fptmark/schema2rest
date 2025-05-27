@@ -14,7 +14,7 @@ from generators.gen_main import generate_main
 from convert.schemaConvert import convert_schema
 from tools.mongo.update_indicies import update_indexes
 
-def generate_code(schema_file, base_output_dir, backend, config_file=None):
+def generate_code(schema_file, base_output_dir, project_name, backend, config_file=None):
     """
     Main entry point for code generation
     """
@@ -22,7 +22,7 @@ def generate_code(schema_file, base_output_dir, backend, config_file=None):
     try:
         yaml = convert_schema(schema_file)
         if yaml:
-            generate_main(yaml, base_output_dir, backend)
+            generate_main(yaml, base_output_dir, backend, project_name)
             generate_routes(yaml, base_output_dir, backend)
             generate_db(yaml, base_output_dir, backend)
             generate_models(yaml, base_output_dir, backend)
@@ -46,13 +46,15 @@ def generate_code(schema_file, base_output_dir, backend, config_file=None):
     return 0
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python generate_code.py <schema.mmd> <base_output_path> [<backend>] [<config_file>]")
+    if len(sys.argv) < 4:
+        print("Usage: python generate_code.py <schema.mmd> <base_output_path> <project name> [<backend>] [<config_file>]")
         sys.exit(1)
 
-    backend = "mongo" if len(sys.argv) < 4 else sys.argv[3]
+    optional_param_start = 4
+    backend = "mongo" if len(sys.argv) < optional_param_start else sys.argv[optional_param_start - 1]
     if not valid_backend(backend):
         print(f"Invalid backend: {backend}. Supported backends are: mongo, es.")
         sys.exit(1)
 
-    results = generate_code(sys.argv[1], sys.argv[2], backend, None if len(sys.argv) < 5 else sys.argv[4])
+    config_file = None if len(sys.argv) < optional_param_start + 1 else sys.argv[optional_param_start]
+    results = generate_code(sys.argv[1], sys.argv[2], sys.argv[3], backend, config_file)

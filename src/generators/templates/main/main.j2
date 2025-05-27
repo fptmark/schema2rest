@@ -110,11 +110,14 @@ def read_root():
 
 @app.get('/api/metadata')
 def get_entities_metadata():
-    return  [
+    return  {
+        'projectName': '{{ project_name }}',
+        'entities': [
 {% for entity in entities %}
         {{ entity }}.get_metadata(),     
 {% endfor %}
-    ]
+        ]
+    }
 
 if __name__ == '__main__':
     import uvicorn
