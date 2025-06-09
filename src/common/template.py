@@ -10,9 +10,9 @@ class Templates:
     templates: dict[str, list[str]] = {}
 
     # base_dir is the path where the template directory exists
-    def __init__(self, base_dir: Path, component: str, backend: str):
+    def __init__(self, base_dir: Path, component: str):
         self.templates = {}
-        template_dir = Path(base_dir) / "templates" / component / backend
+        template_dir = Path(base_dir) / "templates" / component
         names = []
         for fn in template_dir.iterdir():
             if fn.suffix == ".tpl":
