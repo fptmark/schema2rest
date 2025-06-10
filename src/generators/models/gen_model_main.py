@@ -15,7 +15,7 @@ from common.schema import Schema
 BASE_DIR = Path(__file__).resolve().parent
 
 
-def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates, backend: str, schema: Schema):
+def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates, schema: Schema):
     """Collect all of the placeholders your templates expect."""
     fields = e_def.get("fields", {})
     operations = e_def.get("operations", "")
@@ -33,7 +33,7 @@ def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates
     validator_lines: List[str] = []    # validators for fields that are not autoGenerate or autoUpdate
 
     for field_name, info in fields.items():
-        base, init = type_annotation(info, backend, schema)
+        base, init = type_annotation(info, schema)
         line = f"{field_name}: {base} = {init}"
         if info.get("autoGenerate", False):
             auto_field_lines.append(line)
@@ -57,8 +57,8 @@ def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates
     # generate the save function if there are any autoUpdate fields
     if len(auto_update_lines) > 0:
         vars["AutoUpdateLines"] =  auto_update_lines 
-        save_lines = templates.render("save", vars)
-        vars["SaveFunction"] = save_lines
+        # save_lines = templates.render("save", vars)
+        # vars["SaveFunction"] = save_lines
 
     # generate the validators if there are any 
     if len(validator_lines) > 0:
@@ -79,9 +79,9 @@ def update_metadata(metadata: Dict[str, Any], schema: Schema):
 
 
 
-def generate_models(schema_file: str, path_root: str, backend: str):
+def generate_models(schema_file: str, path_root: str):
 
-    templates = template.Templates(BASE_DIR / "..", "models", backend)
+    templates = template.Templates(BASE_DIR / "..", "models")
 
     print(f"Generating models in {path_root}")
     schema = Schema(schema_file)
@@ -89,7 +89,7 @@ def generate_models(schema_file: str, path_root: str, backend: str):
         if defs.get("abstract", False):
             continue
 
-        vars_map = build_vars(entity, defs, templates, backend, schema)
+        vars_map = build_vars(entity, defs, templates, schema)
         out: List[str] = []
 
         for i in range(1, len(templates.list())):
@@ -97,17 +97,15 @@ def generate_models(schema_file: str, path_root: str, backend: str):
             out.extend(rendered)
             out.append("")   # blank line between template blocks
 
-        helpers.write(path_root, backend, "models", f"{entity.lower()}_model.py", out)
+        helpers.write(path_root, "models", f"{entity.lower()}_model.py", out)
         # print(f"Generated {entity.lower()}_model.py")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print(f"Usage: python {sys.argv[0]} <schema.yaml> <output_path> [<backend>]")
+    if len(sys.argv) < 2:
+        print(f"Usage: python {sys.argv[0]} <schema.yaml> <output_path>")
         sys.exit(1)
     
     schema_file = sys.argv[1]
     path_root = sys.argv[2]
-    backend = sys.argv[3] if len(sys.argv) >= 3 else "mongo"
 
-    if helpers.valid_backend(backend):
-        generate_models(schema_file, path_root, backend)
+    generate_models(schema_file, path_root)

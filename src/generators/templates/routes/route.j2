@@ -1,0 +1,93 @@
+{# --- Macro for injecting Python-style f-string variables --- #}
+{% macro py_var(name) -%}
+{{'{'}}{{ name }}{{'}'}}
+{%- endmacro %}
+
+from fastapi import APIRouter
+from typing import List
+import logging
+from app.models.{{EntityLower}}_model import {{Entity}}, {{Entity}}Create, {{Entity}}Update
+from app.errors import ValidationError, NotFoundError, DuplicateError, DatabaseError
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+@router.get("", response_model=List[{{Entity}}])
+async def list_{{EntityLower}}s() -> List[{{Entity}}]:
+    """List all {{EntityLower}}s"""
+    try:
+        logger.info("Fetching all {{EntityLower}}s")
+        {{EntityLower}}s = await {{Entity}}.find_all()
+        logger.info(f"Retrieved {{ py_var(EntityLower ~ 's|length') }} {{EntityLower}}s")
+        return list({{EntityLower}}s)
+    except Exception as e:
+        logger.error(f"Error listing {{EntityLower}}s: {e}")
+        raise
+
+
+@router.get("/{{ py_var(EntityLower ~ '_id') }}", response_model={{Entity}})
+async def get_{{EntityLower}}({{EntityLower}}_id: str) -> {{Entity}}:
+    """Get a specific {{EntityLower}} by ID"""
+    try:
+        logger.info(f"Fetching {{EntityLower}} with ID: {{ py_var(EntityLower ~ '_id') }}")
+        {{EntityLower}} = await {{Entity}}.get({{EntityLower}}_id)
+        logger.info(f"Retrieved {{EntityLower}}: {{ py_var(EntityLower ~ '.id') }}")
+        return {{EntityLower}}
+    except NotFoundError:
+        logger.warning(f"{{Entity}} not found: {{ py_var(EntityLower ~ '_id') }}")
+        raise
+    except Exception as e:
+        logger.error(f"Error getting {{EntityLower}} {{ py_var(EntityLower ~ '_id') }}: {e}")
+        raise
+
+
+@router.post("", response_model={{Entity}})
+async def create_{{EntityLower}}({{EntityLower}}_data: {{Entity}}Create) -> {{Entity}}:
+    """Create a new {{EntityLower}}"""
+    try:
+        logger.info(f"Creating {{EntityLower}} with data: {{ py_var(EntityLower ~ '_data') }}")
+        {{EntityLower}} = {{Entity}}(**{{EntityLower}}_data.model_dump())
+        result = await {{EntityLower}}.save()
+        logger.info(f"{{Entity}} created successfully with ID: {{ py_var('result.id') }}")
+        return result
+    except (ValidationError, DuplicateError) as e:
+        logger.warning(f"Validation error creating {{EntityLower}}: {type(e).__name__}: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"Error creating {{EntityLower}}: {e}")
+        raise
+
+
+@router.put("/{{ py_var(EntityLower ~ '_id') }}", response_model={{Entity}})
+async def update_{{EntityLower}}({{EntityLower}}_id: str, {{EntityLower}}_data: {{Entity}}Update) -> {{Entity}}:
+    """Update an existing {{EntityLower}}"""
+    try:
+        logger.info(f"Updating {{EntityLower}} {{ py_var(EntityLower ~ '_id') }} with data: {{ py_var(EntityLower ~ '_data') }}")
+
+        existing = await {{Entity}}.get({{EntityLower}}_id)
+        logger.info(f"Found existing {{EntityLower}}: {{ py_var('existing.id') }}")
+
+        {{EntityLower}} = {{Entity}}(**{{EntityLower}}_data.model_dump())
+        result = await {{EntityLower}}.save({{EntityLower}}_id)
+        logger.info(f"{{Entity}} updated successfully: {{ py_var('result.id') }}")
+        return result
+    except (NotFoundError, ValidationError, DuplicateError) as e:
+        logger.warning(f"Error updating {{EntityLower}} {{ py_var(EntityLower ~ '_id') }}: {type(e).__name__}: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"Error updating {{EntityLower}} {{ py_var(EntityLower ~ '_id') }}: {e}")
+        raise
+
+
+@router.delete("/{{ py_var(EntityLower ~ '_id') }}")
+async def delete_{{EntityLower}}({{EntityLower}}_id: str):
+    """Delete a {{EntityLower}}"""
+    try:
+        logger.info(f"Deleting {{EntityLower}}: {{ py_var(EntityLower ~ '_id') }}")
+        {{EntityLower}} = await {{Entity}}.get({{EntityLower}}_id)
+        await {{EntityLower}}.delete()
+        logger.info(f"{{Entity}} deleted successfully: {{ py_var(EntityLower ~ '_id') }}")
+        return {"message": "{{Entity}} deleted successfully"}
+    except NotFoundError:
+        logger.warning(f"{{Entity}} not found for deletion: {{ py_var(EntityLower ~ '_id') }}")

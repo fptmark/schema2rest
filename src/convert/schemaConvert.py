@@ -3,7 +3,6 @@ import sys
 import traceback
 import yaml
 from typing import Dict, Set, Any, List, Tuple
-from src.common.helpers import valid_backend
 from src.convert.decorators import Decorator, ABSTRACT
 
 
