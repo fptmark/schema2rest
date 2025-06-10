@@ -89,6 +89,7 @@ Supported decorators
 | operations| CRUD                 ||          |              | 
 | abstract  | abstract entity      ||          |              | 
 | include   | use/copy abstract    ||          |              | 
+| show      | show foreign fields  ||          |              | 
 
 
 The system supports a set of custom decorators
@@ -135,6 +136,15 @@ The system supports a set of custom decorators
     Only allowed inside an entity defintion but not a field definition.  This defines what operations the dashboard can perform on the entity
                     %% @operations [ "read", "delete" ]
 
+- @show 
+    Only allowed inside a field definition for ObjectId fields.  It defines the values to be shown/selected per page from a foreign table based on a 
+    join using the ObjectId = <foreign table>.id
+            { show { endpoint: "account", displayInfo: [ {displayPages: "summary", fields:  ["createdAt"] }, { displayPages: "edit", fields: ["createdAt", "expiredAt" ]} ]}
+        NOTE: endpoint is optional and defaults to the named entity (Account which becomes "account").  
+        On the profile summary, the users email would be shown (instead of the id by default) and 
+        on the profile view/edit/create (edit implies edit and create) the email and username will be shown in addition to showing those fields 
+        in the selector for create/edit.
+
 - @dictionary
     Must exists outside an entity definition.  Defines a dictionary of common strings/patterns such as a URL regex
                     %% @dictionary pattern { email: "^[a-zA-Z0-9._%-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", url: "^https?://[^\s]+$" }
@@ -154,21 +164,23 @@ The `@ui` decorator allows you to customize how fields are displayed in the user
 | `displayName` | Human-readable name for the field | `@ui firstName { displayName: "First Name" }` | Converted from camelCase to Title Case |
 | `displayPages` | When to display the field | `@ui password { displayPages: "summary|form" }`.  
 | `display` | Display attributes '' or hidden or secret | `@ui password { display: "secret" }` | "always" 
-#| `widget` | UI control type | `@ui email { widget: "email" }` | Inferred from field type and validation |  - depreciated
+| `widget` | UI control type | `@ui email { widget: "email" }` | Inferred from field type and validation |  - depreciated
 | `placeholder` | Placeholder text | `@ui email { placeholder: "example@domain.com" }` | None |
 | `helpText` | Helper text shown below the field | `@ui password { helpText: "Min 8 characters" }` | None |
 | `readOnly` | Whether field is read-only | `@ui createdAt { readOnly: true }` | false |
 | `displayAfterField` | Field to display after (for ordering) | `@ui lastName { displayAfterField: "firstName" }` | Previous field name |
 | `format` | formatting info
 | `link` | display a link | @ui accountId { link: 'entities/account/${value}' }
+| `show` | defines pages and Foreign fields | @ui accountId { show: ... }
+| `spinnerStep` | defines the step amount per spinner click | @ui { spinnerStep: 1000}
 
 ### Display Modes
 
 The `displayPages` attribute is a multi-value seperated by a vertical bar (|)
 - `all` or '' or missing - Display in all views (default)
 - `summary` - Display in inital summary view
-- `details` - Display in detail views
-- `form` - Display in edit forms
+- `view` - Display in detail views
+- `edit` - Display in edit (and create) mode
 - `none` - Do not show 
 
 
