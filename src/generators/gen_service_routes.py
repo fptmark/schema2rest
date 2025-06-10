@@ -25,9 +25,9 @@ def get_jinja_env() -> Environment:
     env.filters['split'] = lambda s, sep=None: s.split(sep)
     return env
 
-def generate_service_routes(schema_file: str, path_root: str, backend: str):
+def generate_service_routes(schema_file: str, generic_files_dir: str, path_root: str):
 
-    abstract_service_dir = Path(__file__).resolve().parent / "../services"  # Where the abstract services are located
+    abstract_service_dir = Path(generic_files_dir) / "services"
 
     schema = Schema(schema_file)
     env = get_jinja_env()
@@ -47,7 +47,7 @@ def generate_service_routes(schema_file: str, path_root: str, backend: str):
             concrete_class_name = provider_name.capitalize()
             alias_name = f"{concrete_class_name}_{entity_name.lower()}"
 
-            service_dir = abstract_service_dir / service_parts[0]   # location of contracts for the service
+            service_dir = Path(abstract_service_dir) / service_parts[0]   # location of contracts for the service
             base_router_path = service_dir / "base_router.py"
             base_model_path = service_dir / "base_model.py"
             concrete_module_path = abstract_service_dir / Path(*service_parts[:-1]) / f"{provider_name}_provider.py" # abstract service provider
@@ -57,9 +57,12 @@ def generate_service_routes(schema_file: str, path_root: str, backend: str):
                 continue
 
             # Load all classes
+            provider_classes = load_classes_from_path(concrete_module_path)
+
+            # Add the path to the service decorator framework
+            sys.path.append(str(abstract_service_dir))
             router_classes = load_classes_from_path(base_router_path)
             model_classes = load_classes_from_path(base_model_path)
-            provider_classes = load_classes_from_path(concrete_module_path)
 
             # Build lookup
             model_class_names = {
@@ -123,7 +126,7 @@ def generate_service_routes(schema_file: str, path_root: str, backend: str):
                 endpoints=endpoints
             )
             
-            write(path_root, backend, "services", f"{alias_name.lower()}.py", rendered)
+            write(path_root, "services", f"{alias_name.lower()}.py", rendered)
             # print(f"Generated service routes for entity '{entity_name}' using service '{service}' at {path_root}/services/{alias_name.lower()}.py")
 
 
@@ -151,12 +154,12 @@ def get_signature_map(cls) -> Dict[str, inspect.Signature]:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print(f"Usage: python {sys.argv[0]} <schema.yaml> <output_path> [<backend>]")
+    if len(sys.argv) != 4:
+        print(f"Usage: python {sys.argv[0]} <schema.yaml> <generic_files_root> <output_path>")
         sys.exit(1)
     
     schema_file = sys.argv[1]
-    path_root = sys.argv[2]
-    backend = sys.argv[3] if len(sys.argv) >= 3 else "mongo"
+    generic_files_root = sys.argv[2] 
+    path_root = sys.argv[3]
     
-    generate_service_routes(schema_file, path_root, backend)
+    generate_service_routes(schema_file, generic_files_root, path_root)
