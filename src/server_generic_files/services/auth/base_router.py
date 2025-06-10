@@ -1,7 +1,7 @@
 # app/services/auth/base.py
 from abc import ABC, abstractmethod
 from fastapi import Request
-from services.framework.decorators import expose_endpoint
+from framework.decorators import expose_endpoint    # resolved at runtime by modifying sys.path
 
 # def expose_endpoint(method: str, route: str):
 #     def decorator(func):

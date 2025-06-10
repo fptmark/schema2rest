@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional
-from services.framework.decorators import expose_response
+from framework.decorators import expose_response # resolved at runtime by modifying sys.path
 
 # def expose_response(endpoint: str):
 #     def decorator(cls):
