@@ -211,16 +211,16 @@ def read_root():
 def get_entities_metadata():
     return  {
         "projectName": project,
-        "entities": [
+        "entities": {
         {% for entity in entities %}
-            {{ entity }}.get_metadata(),
+            "{{ entity }}": {{ entity }}.get_metadata(),
         {% endfor %}
-        ]
+        }
     }
 
 if __name__ == '__main__':
     import uvicorn
-    logger.info("Welcome to the {{ project_name }} Management System")
+    logger.info("Welcome to the {{ project }} Management System")
     my_host = config.get('host', '0.0.0.0')
     my_port = config.get('server_port', 8000)
     logger.info(f' Access Swagger docs at http://{my_host}:{my_port}/docs')

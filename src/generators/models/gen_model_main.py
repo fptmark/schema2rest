@@ -20,9 +20,11 @@ def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates
     fields = e_def.get("fields", {})
     operations = e_def.get("operations", "")
     ui = e_def.get("ui", {})
+    services = e_def.get("service", {})
+    uniques = e_def.get("unique", {})
 
     # metadata block
-    metadata = {'entity': entity, 'fields': fields, 'operations': operations, 'ui': ui}
+    metadata = {'fields': fields, 'operations': operations, 'ui': ui, 'services': services, 'uniques': uniques}
     # replace any dictionary lookups in the metadata
     update_metadata(metadata, schema)
 
