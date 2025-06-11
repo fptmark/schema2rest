@@ -146,7 +146,7 @@ def type_annotation(info: Dict[str, Any], schema):
     elif t == "Array[String]":
         base = "List[str]"
     elif t == "ObjectId":
-        base = "PydanticObjectId" 
+        base = "str" 
     else:
         base = "Any"
 

@@ -2,36 +2,31 @@
 import sys
 import os
 from pathlib import Path
-from jinja2 import Environment, FileSystemLoader
-
+from typing import List
+import common.template as template
 from common.helpers import write
 from common import Schema
 
 BASE_DIR = Path(__file__).resolve().parent
 
-def get_jinja_env() -> Environment:
-    template_dir = os.path.join(BASE_DIR, "templates", "routes")
-
-    env = Environment(
-        loader=FileSystemLoader(template_dir),
-        autoescape=False,
-        trim_blocks=True,
-        lstrip_blocks=True
-    )
-    # Optionally add built-ins here if needed
-    return env
-
 def generate_routes(schema_file: str, path_root: str):
 
     print("Generating routes...")
     schema = Schema(schema_file)
-    env = get_jinja_env()
-    route_template = env.get_template('route.j2')
 
-    for entity_name, entity_def in schema.concrete_entities().items():
+    templates = template.Templates(BASE_DIR, "routes")
 
-        rendered = route_template.render(entity=entity_name)
-        write(path_root, "routes", f"{entity_name.lower()}_router.py", rendered)
+    for entity, defs in schema.concrete_entities().items():
+        if defs.get("abstract", False):
+            continue
+
+        vars_map = {
+            'entity': entity,
+            'entity_lower': entity.lower(),
+        }
+        rendered = templates.render(str(1), vars_map)
+        write(path_root, "routes", f"{entity.lower()}_router.py", rendered)
+        # print(f"Generated {entity.lower()}_model.py")
 
     print("Route generation complete!")
 
