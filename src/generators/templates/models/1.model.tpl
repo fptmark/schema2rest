@@ -72,15 +72,24 @@ class {{Entity}}(BaseModel):
                 self.id = doc_id
 
             data = self.model_dump(exclude={"id"})
-            result = await DatabaseFactory.save_document("{{EntityLower}}", self.id, data)
-
+            
+            # Get unique constraints from metadata
+            unique_constraints = self._metadata.get('uniques', [])
+            
+            # Save document with unique constraints
+            result = await DatabaseFactory.save_document("{{EntityLower}}", self.id, data, unique_constraints)
+            
+            # Update ID from result
             if not self.id and result and isinstance(result, dict) and result.get(DatabaseFactory.get_id_field()):
                 self.id = result[DatabaseFactory.get_id_field()]
 
             return self
+        except ValidationError:
+            # Re-raise validation errors directly
+            raise
         except Exception as e:
             raise DatabaseError(str(e), "{{Entity}}", "save")
-
+            
     async def delete(self) -> bool:
         if not self.id:
             raise ValidationError(
