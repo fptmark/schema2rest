@@ -28,7 +28,7 @@ def get_jinja_env() -> Environment:
     env.filters['split'] = lambda s, sep=None: s.split(sep)
     return env
 
-def generate_main(schema_file, path_root, project_name):
+def generate_main(schema_file, path_root):
 
     print("Generating main...")
     schema = Schema(schema_file)
@@ -41,7 +41,6 @@ def generate_main(schema_file, path_root, project_name):
         return
 
     rendered = model_template.render(
-        project_name=project_name,  # Pass the project name
         entities=schema.concrete_entities(),  # Pass the concrete entities
         services=schema.services(),           # Pass the _services mapping from the YAML
         # backend=backend,
@@ -50,12 +49,11 @@ def generate_main(schema_file, path_root, project_name):
     write(path_root, "", "main.py", rendered)
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print(f"Usage: python {sys.argv[0]} <schema.yaml> <output_path> <project_name>") 
+    if len(sys.argv) < 2:
+        print(f"Usage: python {sys.argv[0]} <schema.yaml> <output_path>")
         sys.exit(1)
     
     schema_file = sys.argv[1]
     path_root = sys.argv[2]
-    project_name = sys.argv[3]
     
-    generate_main(schema_file, path_root, project_name)
+    generate_main(schema_file, path_root)
