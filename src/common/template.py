@@ -3,7 +3,9 @@ import re
 from typing import Dict, List, Mapping, Union
 from pathlib import Path
 
-PLACEHOLDER_PATTERN = re.compile(r"\{\{(\w+)\}\}")
+# PLACEHOLDER_PATTERN = re.compile(r"\{\{(\w+)\}\}")
+PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")
+
 
 class Templates:
 
