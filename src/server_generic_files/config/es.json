@@ -1,4 +1,5 @@
 {
+    "project_name"	: "Events",
     "database"          : "elasticsearch",
     "db_uri"		: "http://localhost:9200",
     "db_name"		: "eventMgr",
