@@ -222,6 +222,7 @@ def read_root():
 def get_entities_metadata():
     return  {
         "projectName": project,
+        "database": db_type,
         "entities": {
         {% for entity in entities %}
             "{{ entity }}": {{ entity }}.get_metadata(),
