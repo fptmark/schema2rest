@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timezone
 import re
 
+
 # Path to the configuration file
 CONFIG_FILE = 'config.json'
 
@@ -53,15 +54,6 @@ def deep_merge_dicts(dest, override):
         else:
             dest[key] = value
 
-def get_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
-    """Get metadata for a model with proper type hints"""
-    overrides = load_settings(Path('overrides.json')) or {}
-    name = metadata.get('entity', '')
-    entity_cfg = overrides.get(name)
-    if entity_cfg:
-        deep_merge_dicts(metadata, entity_cfg)
-    return metadata
-
 def parse_currency(value):
     if value is None:
         return None
@@ -80,6 +72,16 @@ def parse_currency(value):
         return float(cleaned)
     except ValueError:
         return None
+
+def get_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
+    """Get metadata for a model with proper type hints"""
+    overrides = load_settings(Path('overrides.json')) or {}
+    name = metadata.get('entity', '')
+    entity_cfg = overrides.get(name)
+    if entity_cfg:
+        deep_merge_dicts(metadata, entity_cfg)
+    return metadata
+
 
 def format_datetime(dt: Optional[datetime] = None) -> str:
     """Format a datetime object to ISO format"""
