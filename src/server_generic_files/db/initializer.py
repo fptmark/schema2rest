@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Any
 import importlib
 import pkgutil
 from pathlib import Path
@@ -22,42 +22,19 @@ class DatabaseInitializer:
         """
         Initialize database by:
         1. Discovering required collections and their indexes from model metadata
-        2. Getting existing collections from database
-        3. Creating missing collections
-        4. Removing unused collections
-        5. Managing indexes within each collection
+        2. Managing indexes within each collection
+        
+        Note: This initialization is non-destructive - it only manages indexes,
+        it never removes or creates collections.
         """
         self.logger.info("Starting database initialization...")
         
         try:
             # Discover required collections and indexes from models
             required_structure = await self._discover_required_structure()
-            required_collections = set(required_structure.keys())
-            self.logger.info(f"Required collections: {sorted(required_collections)}")
+            self.logger.info(f"Found {len(required_structure)} collections with index requirements")
             
-            # Get existing collections from database
-            existing_collections = set(await self.db.list_collections())
-            self.logger.info(f"Existing collections: {sorted(existing_collections)}")
-            
-            # Calculate differences
-            missing_collections = required_collections - existing_collections
-            unused_collections = existing_collections - required_collections
-            
-            # Create missing collections
-            if missing_collections:
-                self.logger.info(f"Creating missing collections: {sorted(missing_collections)}")
-                await self._create_collections(missing_collections)
-            else:
-                self.logger.info("No missing collections to create")
-            
-            # Remove unused collections
-            if unused_collections:
-                self.logger.info(f"Removing unused collections: {sorted(unused_collections)}")
-                await self._remove_collections(unused_collections)
-            else:
-                self.logger.info("No unused collections to remove")
-            
-            # Manage indexes for each required collection
+            # Manage indexes for each collection
             self.logger.info("Managing indexes for collections...")
             for collection, required_indexes in required_structure.items():
                 await self._manage_collection_indexes(collection, required_indexes)
@@ -72,7 +49,7 @@ class DatabaseInitializer:
                 operation="initialize"
             )
     
-    async def _discover_required_structure(self) -> Dict[str, List[Dict[str, any]]]:
+    async def _discover_required_structure(self) -> Dict[str, List[Dict[str, Any]]]:
         """
         Discover required collections and their indexes by examining model metadata.
         
@@ -84,7 +61,7 @@ class DatabaseInitializer:
         # Import models module to discover all models
         try:
             models_module = importlib.import_module('app.models')
-            models_path = Path(models_module.__file__).parent
+            models_path = Path(models_module.__file__ or "").parent
             
             # Iterate through all Python files in models directory
             for finder, name, ispkg in pkgutil.iter_modules([str(models_path)]):
@@ -96,18 +73,14 @@ class DatabaseInitializer:
                         # Look for classes with _metadata attribute
                         for attr_name in dir(module):
                             attr = getattr(module, attr_name)
-                            if (hasattr(attr, '_metadata') and 
-                                isinstance(attr._metadata, dict) and
-                                'entity' in attr._metadata):
-                                
-                                # Get collection name from Settings.name or derive from entity
+                            if hasattr(attr, '_metadata') and isinstance(attr._metadata, dict):
+                                # Get collection name from Settings.name
                                 collection_name = None
                                 if hasattr(attr, 'Settings') and hasattr(attr.Settings, 'name'):
                                     collection_name = attr.Settings.name
                                 else:
-                                    # Derive collection name from entity name (lowercase)
-                                    entity_name = attr._metadata['entity']
-                                    collection_name = entity_name.lower()
+                                    # Skip if no collection name found
+                                    continue
                                 
                                 if collection_name:
                                     # Extract unique constraints from metadata
@@ -137,48 +110,7 @@ class DatabaseInitializer:
         
         return collections_structure
     
-    async def _create_collections(self, collections: Set[str]) -> None:
-        """
-        Create missing collections.
-        
-        Args:
-            collections: Set of collection names to create
-        """
-        for collection in sorted(collections):
-            try:
-                created = await self.db.create_collection(collection)
-                if created:
-                    self.logger.info(f"✓ Created collection: {collection}")
-                else:
-                    self.logger.info(f"⚠ Collection already exists: {collection}")
-            except Exception as e:
-                self.logger.error(f"✗ Failed to create collection '{collection}': {str(e)}")
-                raise
-    
-    async def _remove_collections(self, collections: Set[str]) -> None:
-        """
-        Remove unused collections.
-        
-        Args:
-            collections: Set of collection names to remove
-        """
-        for collection in sorted(collections):
-            try:
-                # Skip system collections (those starting with .)
-                if collection.startswith('.'):
-                    self.logger.info(f"⚠ Skipping system collection: {collection}")
-                    continue
-                
-                deleted = await self.db.delete_collection(collection)
-                if deleted:
-                    self.logger.info(f"✓ Deleted collection: {collection}")
-                else:
-                    self.logger.info(f"⚠ Collection didn't exist: {collection}")
-            except Exception as e:
-                self.logger.error(f"✗ Failed to delete collection '{collection}': {str(e)}")
-                raise
-
-    async def _manage_collection_indexes(self, collection: str, required_indexes: List[Dict[str, any]]) -> None:
+    async def _manage_collection_indexes(self, collection: str, required_indexes: List[Dict[str, Any]]) -> None:
         """
         Manage indexes for a specific collection.
         
@@ -195,15 +127,16 @@ class DatabaseInitializer:
         # List required indexes
         self.logger.info(f"  Required indexes for '{collection}':")
         for idx in required_indexes:
-            fields_str = " + ".join(idx['fields']) if len(idx['fields']) > 1 else idx['fields'][0]
-            unique_str = " (UNIQUE)" if idx['unique'] else ""
-            self.logger.info(f"    - {idx['name']}: {fields_str}{unique_str}")
+            fields = idx.get('fields', [])
+            fields_str = " + ".join(fields) if len(fields) > 1 else (fields[0] if fields else 'unknown')
+            unique_str = " (UNIQUE)" if idx.get('unique') else ""
+            self.logger.info(f"    - {idx.get('name', 'unnamed')}: {fields_str}{unique_str}")
         
         try:
-            # Check if collection exists
+            # Create collection if it doesn't exist
             if not await self.db.collection_exists(collection):
-                self.logger.warning(f"  Collection '{collection}' doesn't exist, skipping index management")
-                return
+                self.logger.info(f"  Creating collection '{collection}'")
+                await self.db.create_collection(collection)
             
             # Get existing indexes
             try:
@@ -211,10 +144,11 @@ class DatabaseInitializer:
                 self.logger.info(f"  Existing indexes for '{collection}':")
                 if existing_indexes:
                     for idx in existing_indexes:
-                        fields_str = " + ".join(idx['fields']) if len(idx['fields']) > 1 else idx['fields'][0]
+                        fields = idx.get('fields', [])
+                        fields_str = " + ".join(fields) if len(fields) > 1 else (fields[0] if fields else 'unknown')
                         unique_str = " (UNIQUE)" if idx.get('unique') else ""
                         system_str = " (SYSTEM)" if idx.get('system') else ""
-                        self.logger.info(f"    - {idx['name']}: {fields_str}{unique_str}{system_str}")
+                        self.logger.info(f"    - {idx.get('name', 'unnamed')}: {fields_str}{unique_str}{system_str}")
                 else:
                     self.logger.info(f"    - No existing indexes found")
             except Exception as e:

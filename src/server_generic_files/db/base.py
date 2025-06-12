@@ -39,6 +39,24 @@ class DatabaseInterface(ABC):
         pass
 
     @abstractmethod
+    async def initialize_indexes(self) -> None:
+        """
+        Initialize database indexes based on model metadata.
+        This method will:
+        1. Discover required indexes from model metadata
+        2. Create missing indexes
+        3. Remove unused indexes
+        4. Skip system indexes
+        
+        This is a non-destructive operation - it will not delete any collections or data,
+        only manage indexes.
+        
+        Raises:
+            DatabaseError: If index initialization fails
+        """
+        pass
+
+    @abstractmethod
     async def find_all(self, collection: str, model_cls: Type[T]) -> List[T]:
         """
         Find all documents in a collection.
@@ -76,22 +94,24 @@ class DatabaseInterface(ABC):
         pass
 
     @abstractmethod
-    async def save_document(self, collection: str, doc_id: Optional[str], 
-                           data: Dict[str, Any]) -> Any:
+    async def save_document(self, collection: str, doc_id: Optional[Any], data: Dict[str, Any], 
+                          unique_constraints: Optional[List[List[str]]] = None) -> Any:
         """
         Save a document to the database.
         
         Args:
             collection: Collection/index name
-            doc_id: Document ID (None for auto-generation)
+            doc_id: Document ID (optional)
             data: Document data to save
+            unique_constraints: List of field combinations that must be unique
+                              e.g., [['email'], ['username'], ['firstName', 'lastName']]
             
         Returns:
-            Database-specific response object
+            Result of save operation (implementation specific)
             
         Raises:
-            DatabaseError: If save operation fails
-            ValidationError: If required collection/index doesn't exist
+            DatabaseError: If save fails
+            ValidationError: If unique constraints are violated
         """
         pass
 
