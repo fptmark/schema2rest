@@ -11,7 +11,6 @@ from generators.gen_routes import generate_routes
 from generators.gen_service_routes import generate_service_routes
 from generators.gen_main import generate_main
 from convert.schemaConvert import convert_schema
-from tools.mongo.update_indicies import update_indexes
 
 def generate_code(schema_file, generic_file_dir, base_output_dir):
     """

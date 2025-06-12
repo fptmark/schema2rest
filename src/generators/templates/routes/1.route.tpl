@@ -9,14 +9,27 @@ router = APIRouter()
 
 
 @router.get("", response_model=List[{{entity}}])
-async def list_{{entity_lower}}s() -> List[{{entity}}]:
+async def list_{{entity_lower}}s() -> dict:
     """List all {{entity_lower}}s"""
     try:
         logger.info("Fetching all {{entity_lower}}s")
-        {{entity_lower}}s = await {{entity}}.find_all()
+        {{entity_lower}}s, validation_errors = await {{entity}}.find_all()
         records = len({{entity_lower}}s)
         logger.info(f"Retrieved {records} {{entity_lower}}s")
         return list({{entity_lower}}s)
+
+        response = {
+            "data": list({{entity_lower}}),
+            "validation_errors": [
+                {
+                    "message": ve.message,
+                    "entity": ve.entity,
+                    "invalid_fields": [f.to_dict() for f in ve.invalid_fields]
+                }
+                for ve in validation_errors
+            ] if validation_errors else []
+        }
+        return response
     except Exception as e:
         logger.error(f"Error listing {{entity_lower}}s: {e}")
         raise
