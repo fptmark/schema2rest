@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 import app.utils as utils
+from app.config import Config
 from app.db import DatabaseFactory
 from app.db.initializer import DatabaseInitializer
 from fastapi import FastAPI, Request
@@ -50,7 +51,7 @@ def parse_args():
 args = parse_args()
 
 LOG_FILE = "app.log"
-config = utils.load_system_config(args.config_file)
+config = Config.load_system_config(args.config_file)
 is_dev = config.get('environment', 'production') == 'development'
 project = config.get('project_name', 'Project Name Here')
 my_log_level = (args.log_level or 
@@ -73,6 +74,8 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 db_type = config.get('database', None)
 db_uri = config.get('db_uri', None)
 db_name = config.get('db_name', None)
+get_validation = Config.validation_type()
+print(f"Database get validation is {get_validation}")
 
 if not (db_uri and db_name and db_type):
     logger.error("Missing required database configuration")
@@ -232,7 +235,7 @@ def get_entities_metadata():
 
 def main():
     args = parse_args()
-    config = utils.load_system_config(args.config_file)
+    #config = utils.load_system_config(args.config_file)
 
     # Configure logging
     logging.basicConfig(
