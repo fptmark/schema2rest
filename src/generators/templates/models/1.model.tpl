@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, ConfigDict, field_validator
 import re
 from app.db import DatabaseFactory
 import app.utils as helpers
+from app.config import Config
 from app.errors import ValidationError, ValidationFailure, NotFoundError, DuplicateError, DatabaseError
 
 
@@ -22,14 +23,18 @@ class {{Entity}}(BaseModel):
     {{BaseFields}}
     {{AutoFields}}
 
+    _validate: ClassVar[bool] = True
+
+    @classmethod
+    def set_validation(cls, validate: bool) -> None:
+        cls._validate = validate
+
     _metadata: ClassVar[Dict[str, Any]] = {{Metadata}}
 
     class Settings:
         name = "{{EntityLower}}"
 
-    model_config = ConfigDict(
-        populate_by_name=True,
-    )
+    model_config = ConfigDict(from_attributes=True, validate_by_name=True)
 
     {{Validators}}
 
@@ -40,22 +45,15 @@ class {{Entity}}(BaseModel):
     @classmethod
     async def find_all(cls) -> tuple[Sequence[Self], List[ValidationError]]:
         try:
+            cls.set_validation(Config.is_get_validation(True))
             return await DatabaseFactory.find_all("{{EntityLower}}", cls)
         except Exception as e:
             raise DatabaseError(str(e), "{{Entity}}", "find_all")
 
     @classmethod
-    def find(cls):
-        class FindAdapter:
-            @staticmethod
-            async def to_list():
-                return await cls.find_all()
-
-        return FindAdapter()
-
-    @classmethod
     async def get(cls, id: str) -> Self:
         try:
+            cls.set_validation(Config.is_get_validation(False))
             {{EntityLower}} = await DatabaseFactory.get_by_id("{{EntityLower}}", str(id), cls)
             if not {{EntityLower}}:
                 raise NotFoundError("{{Entity}}", id)
@@ -67,6 +65,7 @@ class {{Entity}}(BaseModel):
 
     async def save(self, doc_id: Optional[str] = None) -> Self:
         try:
+            self.set_validation(True)  # Always validate on save
             {{AutoUpdateLines}}
             if doc_id:
                 self.id = doc_id
