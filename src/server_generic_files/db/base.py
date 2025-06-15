@@ -4,7 +4,8 @@ from pydantic import BaseModel
 import pkgutil
 import importlib
 from pathlib import Path
-from ..errors import ValidationError
+from ..errors import ValidationError, ValidationFailure, NotFoundError, DuplicateError, DatabaseError
+from ..config import Config
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -393,16 +394,14 @@ class DatabaseInterface(ABC):
         """
         pass
 
-    def validate_document(self, doc_data: Dict[str, Any], model_cls: Type[T]) -> T:
+    def validate_document(self, data: Dict[str, Any], model_class: Type[T], operation: str = '') -> T:
         """
         Validate document data against a Pydantic model.
         
-        This is a common operation across all database implementations,
-        so it's provided as a concrete method in the base class.
-        
         Args:
-            doc_data: Raw document data from database
-            model_cls: Pydantic model class for validation
+            data: Document data to validate
+            model_class: Pydantic model class to validate against
+            operation: Type of operation ('get', 'get-all', or '')
             
         Returns:
             Validated model instance
@@ -410,30 +409,11 @@ class DatabaseInterface(ABC):
         Raises:
             ValidationError: If validation fails
         """
-        from pydantic import ValidationError as PydanticValidationError
-        from ..errors import ValidationFailure
+        validation_type = Config.validation_type()
         
-        try:
-            return model_cls.model_validate(doc_data)
-        except PydanticValidationError as e:
-            # Convert Pydantic validation error to our standard format
-            errors = e.errors()
-            if errors:
-                failures = [
-                    ValidationFailure(
-                        field=str(err["loc"][-1]),
-                        message=err["msg"],
-                        value=err.get("input")
-                    )
-                    for err in errors
-                ]
-                raise ValidationError(
-                    message="Validation failed",
-                    entity=model_cls.__name__,
-                    invalid_fields=failures
-                )
-            raise ValidationError(
-                message="Validation failed",
-                entity=model_cls.__name__,
-                invalid_fields=[]
-            )
+        # For get operations, validate if validation_type is 'get' or 'get-all'
+        if operation in ['get', 'get-all'] and validation_type not in ['get', 'get-all']:
+            return model_class.model_construct(**data)
+            
+        # For create/update operations, always validate
+        return model_class.model_validate(data)
