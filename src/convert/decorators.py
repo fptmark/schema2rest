@@ -198,7 +198,7 @@ class Decorator:
                 # Process UI
                 if decorator == UI:
                     for key, value in data.items():
-                        if key != 'show' or field.get('type') == 'ObjectId':
+                        if key != 'show' or field.get('type', 'ObjectId') == 'ObjectId':
                             field.setdefault(UI_METADATA, {}).update({key: value})
 
                 else:
