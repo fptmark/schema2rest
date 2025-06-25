@@ -17,7 +17,10 @@ BASE_DIR = Path(__file__).resolve().parent
 
 def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates, schema: Schema):
     """Collect all of the placeholders your templates expect."""
-    fields = e_def.get("fields", {})
+    # Add the id to the metadata
+    fields =  { 'id' : { 'type': 'ObjectId', 'autoGenerate': True }  } 
+
+    fields.update( e_def.get("fields", {}) )
     operations = e_def.get("operations", "")
     ui = e_def.get("ui", {})
     services = e_def.get("service", {})
@@ -34,17 +37,21 @@ def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates
     auto_update_lines: List[str] = []         # save function which is for autoUpdate fields
     validator_lines: List[str] = []    # validators for fields that are not autoGenerate or autoUpdate
 
+    # Add the id to the metadata and fields
+    base_field_lines.append("id: Optional[str] = Field(default=None, alias='_id')")
+
     for field_name, info in fields.items():
         base, init = type_annotation(info, schema)
-        line = f"{field_name}: {base} = {init}"
-        if info.get("autoGenerate", False):
-            auto_field_lines.append(line)
-        elif info.get("autoUpdate", False):   # autoupdate needs to be in save()
-            auto_field_lines.append(line)
-            auto_update_lines.append(f"self.{field_name} = datetime.now(timezone.utc)")
-        else:
-            base_field_lines.append(line)
-            validator_lines = validator_lines + build_validator(field_name, info, schema)
+        if field_name != "id":
+            line = f"{field_name}: {base} = {init}"
+            if info.get("autoGenerate", False):
+                auto_field_lines.append(line)
+            elif info.get("autoUpdate", False):   # autoupdate needs to be in save()
+                auto_field_lines.append(line)
+                auto_update_lines.append(f"self.{field_name} = datetime.now(timezone.utc)")
+            else:
+                base_field_lines.append(line)
+                validator_lines = validator_lines + build_validator(field_name, info, schema)
 
     vars = {
         "Entity":           entity,
