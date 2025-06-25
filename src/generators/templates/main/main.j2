@@ -18,40 +18,50 @@ from app.errors import (
     DuplicateError, 
     normalize_error_response
 )
+
+from app.routers.router import get_all_dynamic_routers
+
 {# --- Dynamic Import of Service Classes --- #}
 {% for service in services %}
 {% set service_parts = service.split('.') %}
 {% set reversed_parts = service_parts[:-1] | reverse %}
 {% set service_class = reversed_parts | map('capitalize') | join('') %}
-from app.services.{{ service_parts[-1] }}_provider import {{ service_class }} as {{ service_parts[0]|capitalize }}
+from app.services.{{service_parts[0]}}.{{service_parts[1]}}.{{ service_parts[-1] }}_provider import {{ service_class }} as {{ service_parts[0]|capitalize }}
 {% endfor %}
 
-{# --- Dynamic Import of Route Routers for Entities --- #}
+{# --- Dynamic Import of models for Entities --- #}
 {% for entity in entities %}
-from app.routes.{{ entity|lower }}_router import router as {{ entity|lower }}_router
 from app.models.{{ entity|lower }}_model import {{ entity }}
-
 {% endfor %}
 
 import logging
+
+def setup_routers(yaml_file: str):
+    # --- Dynamic Registration of Routers for Entities --- #
+    for router in get_all_dynamic_routers(Path(yaml_file)):
+        app.include_router(router, prefix="/api")
 
 def parse_args():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(description='Events API Server')
     parser.add_argument('config_file', nargs='?', default='config.json',
                        help='Configuration file path (default: config.json)')
+    parser.add_argument('--yaml', nargs='?', default='schema.yaml',
+                       help='YAML schema file path (default: schema.yaml)')
     parser.add_argument('--log-level', 
                        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                        help='Override log level from config')
     parser.add_argument('--initdb', action='store_true',
                        help='Initialize database: manage required indexes based on model metadata, then exit')
+    parser.add_argument('--resetdb', action='store_true',
+                       help='Clear all indexes on database, then exit')
     return parser.parse_args()
 
 # Parse command line arguments
 args = parse_args()
 
 LOG_FILE = "app.log"
-config = Config.load_system_config(args.config_file)
+config = Config.initialize(args.config_file)
 is_dev = config.get('environment', 'production') == 'development'
 project = config.get('project_name', 'Project Name Here')
 my_log_level = (args.log_level or 
@@ -71,23 +81,57 @@ logger = logging.getLogger(__name__)
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 # Validate database configuration before creating FastAPI app
-db_type = config.get('database', None)
-db_uri = config.get('db_uri', None)
-db_name = config.get('db_name', None)
-get_validation = Config.validation_type()
-print(f"Database get validation is {get_validation}")
+db_type: str = config.get('database', '')
+db_uri: str = config.get('db_uri', '')
+db_name: str = config.get('db_name', '')
+validations = Config.validations(False)
+print(f"Database validations : get/get-all {validations[0]}.  Unique validation: {validations[1]}")
 
-if not (db_uri and db_name and db_type):
+if (db_uri == '' or db_name == '' or db_type == ''):
     logger.error("Missing required database configuration")
     sys.exit(1)
 
-try:
-    # Test database connection before creating FastAPI app
-    db = DatabaseFactory.create(db_type)
-    logger.info(f"Database type {db_type} is supported")
-except Exception as e:
-    logger.error(f"Failed to create database instance: {str(e)}")
+# Validate database type is supported
+supported_types = ["mongodb", "elasticsearch"]
+if db_type.lower() not in supported_types:
+    logger.error(f"Unsupported database type: {db_type}. Supported types: {supported_types}")
     sys.exit(1)
+
+logger.info(f"Database type {db_type} is supported")
+
+# Handle database management commands before creating FastAPI app
+if args.initdb or args.resetdb:
+    import asyncio
+    
+    async def handle_db_command():
+        try:
+            # Initialize database connection
+            db_instance = await DatabaseFactory.initialize(db_type, db_uri, db_name)
+            initializer = DatabaseInitializer(db_instance)
+            
+            if args.initdb:
+                logger.info("--initdb flag specified, initializing database schema")
+                logger.info("Starting database initialization...")
+                await initializer.initialize_database()
+                logger.info("Database initialization completed successfully")
+            
+            elif args.resetdb:
+                logger.info("--resetdb flag specified, resetting database indexes")
+                logger.info("Starting database reset (indexes only)...")
+                await initializer.reset_database_indexes()
+                logger.info("Database reset completed successfully")
+            
+            # Cleanup
+            await DatabaseFactory.close()
+            logger.info("Database connection closed")
+            
+        except Exception as e:
+            logger.error(f"Failed to execute database command: {str(e)}")
+            sys.exit(1)
+    
+    # Run database command and exit
+    asyncio.run(handle_db_command())
+    sys.exit(0)
 
 # Create the FastAPI app.
 @asynccontextmanager
@@ -97,21 +141,13 @@ async def lifespan(app: FastAPI):
     logger.info(f"Running in {'development' if config.get('environment', 'production') == 'development' else 'production'} mode")
     logger.info(f"Connecting to {db_type} datastore at {db_uri} with db {db_name}")
     
-    try:
-        # Initialize database instance
-        await db.init(db_uri, db_name)
-        DatabaseFactory.set_instance(db, db_type)
-        logger.info(f"Connected to {db_type} successfully")
+    logger.info(f"Registing routers")
+    setup_routers(args.yaml)
 
-        # Handle --initdb flag if present
-        if args.initdb:
-            logger.info("--initdb flag specified, initializing database schema")
-            logger.info("Starting database initialization...")
-            initializer = DatabaseInitializer(db)
-            await initializer.initialize_database()
-            logger.info("Database initialization completed successfully")
-            # Exit after initialization
-            sys.exit(0)
+    try:
+        # Initialize database connection for normal server operation
+        db_instance = await DatabaseFactory.initialize(db_type, db_uri, db_name)
+        logger.info(f"Connected to {db_type} successfully")
 
     except Exception as e:
         logger.error(f"Failed to initialize database: {str(e)}")
@@ -162,11 +198,6 @@ app.add_middleware(
     allow_headers=["*"],
     max_age=3600,             # cache preflight for 1 hour
 )
-
-{# --- Dynamic Registration of Routers for Entities --- #}
-{% for entity in entities %}
-app.include_router({{ entity|lower }}_router, prefix='/api/{{ entity|lower }}', tags=['{{ entity|title }}'])
-{% endfor %}
 
 @app.exception_handler(DatabaseError)
 async def database_error_handler(request: Request, exc: DatabaseError):
@@ -235,7 +266,6 @@ def get_entities_metadata():
 
 def main():
     args = parse_args()
-    #config = utils.load_system_config(args.config_file)
 
     # Configure logging
     logging.basicConfig(
@@ -247,52 +277,12 @@ def main():
     logger.info("Welcome to the {{ project }} Management System")
     logger.info(" Access Swagger docs at http://127.0.0.1:5500/docs")
 
-    # If --initdb flag is present, just initialize the database and exit
-    if args.initdb:
-        import asyncio
-        async def init_db():
-            db_type = config.get('database', None)
-            db_uri = config.get('db_uri', None)
-            db_name = config.get('db_name', None)
-
-            if not all([db_type, db_uri, db_name]):
-                logger.error("Missing required database configuration")
-                return
-
-            try:
-                # Create and initialize database instance
-                db = DatabaseFactory.create(db_type)
-                await db.init(db_uri, db_name)
-                DatabaseFactory.set_instance(db, db_type)
-                logger.info(f"Connected to {db_type} successfully")
-
-                # Initialize database schema
-                logger.info("--initdb flag specified, initializing database schema")
-                logger.info("Starting database initialization...")
-                initializer = DatabaseInitializer(db)
-                await initializer.initialize_database()
-                logger.info("Database initialization completed successfully")
-
-                # Cleanup
-                await DatabaseFactory.close()
-                logger.info(f"{db_type} connection closed")
-                logger.info("Database instance closed and cleaned up")
-                logger.info("Database connections closed")
-
-            except Exception as e:
-                logger.error(f"Failed to initialize database: {str(e)}")
-                sys.exit(1)
-
-        # Run database initialization
-        asyncio.run(init_db())
-        sys.exit(0)
-
     # Start the server normally if --initdb is not present
     import uvicorn
     uvicorn.run(
         "app.main:app",
         host="127.0.0.1",
-        port=5500,
+        port=server_port,
         reload=True,
         reload_dirs=[str(Path(__file__).resolve().parent)]
     )
