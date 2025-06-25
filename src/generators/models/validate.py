@@ -37,11 +37,10 @@ def build_validator(fname: str, info: Dict[str, Any], schema: Schema) -> List[st
     if info.get("type") == "ISODate":
         lines.append(f"@field_validator('{fname}', mode='before')")
         lines.append(f"def parse_{fname}(cls, v):")
-        lines.append(f"    if cls._validate:")
-        lines.append(f"        if v in (None, '', 'null'):")
-        lines.append(f"            return None")
-        lines.append(f"        if isinstance(v, str):")
-        lines.append(f"            return datetime.fromisoformat(v)")
+        lines.append(f"    if v in (None, '', 'null'):")
+        lines.append(f"        return None")
+        lines.append(f"    if isinstance(v, str):")
+        lines.append(f"        return datetime.fromisoformat(v)")
         lines.append(f"    return v")
         lines.append("")   # Blank line after pre-validator
 
@@ -61,30 +60,29 @@ def build_validator(fname: str, info: Dict[str, Any], schema: Schema) -> List[st
 
         lines.append(f"@field_validator('{fname}', mode='before')")
         lines.append(f"def validate_{fname}(cls, v):")
-        lines.append(f"    if cls._validate:")
-        # lines.append(f"    _custom = {{}}")
 
         if info['type'] == "Currency":
-            lines.append    (f"        if v is None: return None")
-            lines.append    (f"        parsed = helpers.parse_currency(v)")
-            lines.append    (f"        if parsed is None:")
-            lines.append    (f"            raise ValueError('{fname} must be a valid currency')")
+            lines.append    (f"    parsed = v")
+            lines.append    (f"    if v is None: return None")
+            lines.append    (f"    parsed = helpers.parse_currency(v)")
+            lines.append    (f"    if parsed is None:")
+            lines.append    (f"        raise ValueError('{fname} must be a valid currency')")
             if mn is not None:
-                lines.append(f"        if parsed < {mn}:")
-                lines.append(f"            raise ValueError('{fname} must be at least {mn}')")
+                lines.append(f"    if parsed < {mn}:")
+                lines.append(f"        raise ValueError('{fname} must be at least {mn}')")
             if mx is not None:
-                lines.append(f"        if parsed > {mx}:")
-                lines.append(f"            raise ValueError('{fname} must be at most {mx}')")
+                lines.append(f"    if parsed > {mx}:")
+                lines.append(f"        raise ValueError('{fname} must be at most {mx}')")
             lines.append    (f"    return parsed")
             return lines
             
         if mnlen:
-            lines.append(f"        if v is not None and len(v) < {mnlen}:")
-            lines.append(f"            raise ValueError('{fname} must be at least {mnlen} characters')")
+            lines.append(f"    if v is not None and len(v) < {mnlen}:")
+            lines.append(f"        raise ValueError('{fname} must be at least {mnlen} characters')")
 
         if mxlen:
-            lines.append(f"        if v is not None and len(v) > {mxlen}:")
-            lines.append(f"            raise ValueError('{fname} must be at most {mxlen} characters')")
+            lines.append(f"    if v is not None and len(v) > {mxlen}:")
+            lines.append(f"        raise ValueError('{fname} must be at most {mxlen} characters')")
 
         if pat:
             if isinstance(pat, dict):
@@ -92,11 +90,11 @@ def build_validator(fname: str, info: Dict[str, Any], schema: Schema) -> List[st
             else:
                 regex = pat
                 pm = None
-            lines.append     (f"        if v is not None and not re.match(r'{regex}', v):")
+            lines.append     (f"    if v is not None and not re.match(r'{regex}', v):")
             if pm:
-                lines.append(f"            raise ValueError('{pm}')")
+                lines.append(f"        raise ValueError('{pm}')")
             else:
-                lines.append(f"            raise ValueError('{fname} is not in the correct format')")
+                lines.append(f"        raise ValueError('{fname} is not in the correct format')")
 
         if enum:
             if isinstance(enum, dict):
@@ -105,20 +103,20 @@ def build_validator(fname: str, info: Dict[str, Any], schema: Schema) -> List[st
             else:
                 allowed = enum
                 em = None
-            lines.append    (f"        allowed = {allowed}")
-            lines.append    (f"        if v is not None and v not in allowed:")
+            lines.append    (f"    allowed = {allowed}")
+            lines.append    (f"    if v is not None and v not in allowed:")
             if em:
-                lines.append(f"            raise ValueError('{em}')")
+                lines.append(f"        raise ValueError('{em}')")
             else:
-                lines.append(f"            raise ValueError('{fname} must be one of ' + ','.join(allowed))")
+                lines.append(f"        raise ValueError('{fname} must be one of ' + ','.join(allowed))")
 
         if mn is not None:
-            lines.append    (f"        if v is not None and {convert_v} < {mn}:")
-            lines.append    (f"            raise ValueError('{fname} must be at least {mn}')")
+            lines.append    (f"    if v is not None and {convert_v} < {mn}:")
+            lines.append    (f"        raise ValueError('{fname} must be at least {mn}')")
 
         if mx is not None:
-            lines.append    (f"        if v is not None and {convert_v} > {mx}:")
-            lines.append    (f"            raise ValueError('{fname} must be at most {mx}')")
+            lines.append    (f"    if v is not None and {convert_v} > {mx}:")
+            lines.append    (f"        raise ValueError('{fname} must be at most {mx}')")
 
         lines.append        (f"    return v")
         lines.append(" ")  # Blank line after validator
