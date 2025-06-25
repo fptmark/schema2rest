@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 import json
 from app.utils import load_settings
 
@@ -12,12 +12,13 @@ class Config:
         return cls._instance
 
     @classmethod
-    def initialize(cls, config_file: str) -> None:
+    def initialize(cls, config_file: str) -> Dict[str, Any]:
         """Initialize the config singleton with values from config file"""
-        cls._config = cls.load_system_config(config_file)
+        cls._config = cls._load_system_config(config_file)
+        return cls._config
 
     @staticmethod
-    def load_system_config(config_file: str) -> Dict[str, Any]:
+    def _load_system_config(config_file: str) -> Dict[str, Any]:
         """
         Load and return the configuration from config.json.
         If the file is not found, return default configuration values.
@@ -35,16 +36,34 @@ class Config:
             }
         return load_settings(config_path)
 
-    @staticmethod
-    def validation_type() -> str:
-        """Get the current validation type from config"""
-        return Config._config.get('get-validation', 'default')
+    # @staticmethod
+    # def validation_type() -> str:
+    #     """Get the current validation type from config"""
+    #     return Config._config.get('get_validation', 'default')
+
+    # @staticmethod
+    # def unique_validation() -> bool:
+    #     """Get the current validation type from config"""
+    #     return Config._config.get('unique_validation', False)
 
     @staticmethod
-    def is_get_validation(get_all: bool) -> bool:
-        """Check if validation should occur for get operations"""
-        if get_all and Config.validation_type() == 'get-all':
-            return True
+    def validations(get_all: bool) -> Tuple[bool, bool]:
+        """Get the current validation type from config"""
+        get_validation = False
+        validation = Config._config.get('get_validation', '') 
+        if get_all and validation == 'get_all':
+            get_validation = True
         else:
-             return Config.validation_type() in ['get', 'get-all']
+            get_validation = validation in ['get', 'get_all'] #
+
+        unique_validation = Config._config.get('unique_validation', False)
+        return (get_validation, unique_validation)
+
+    # @staticmethod
+    # def is_get_validation(get_all: bool) -> bool:
+    #     """Check if validation should occur for get operations"""
+    #     if get_all and Config.validation_type() == 'get-all':
+    #         return True
+    #     else:
+    #          return Config.validation_type() in ['get', 'get-all']
 
