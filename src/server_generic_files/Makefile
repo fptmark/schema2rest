@@ -71,4 +71,5 @@ runes:
 	  -p 9200:9200 -p 9300:9300 \
 	  -e discovery.type=single-node \
 	  -e xpack.security.enabled=false \
+          -v /Users/markmalamut/esdata:/usr/share/elasticsearch/data \
 	  elasticsearch:8.12.2
