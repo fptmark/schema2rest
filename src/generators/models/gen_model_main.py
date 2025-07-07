@@ -3,8 +3,9 @@ import json
 import sys
 from typing import Dict, Any, List
 from pathlib import Path
-from .validate import type_annotation, build_validator
-from .model_utils import get_pattern, get_elastic_search_mapping, dictionary_resolve
+from enum import Enum
+from .validate import type_annotation, generate_enum_class
+from .model_utils import dictionary_resolve
 import pprint
 
 import common.template as template
@@ -12,10 +13,16 @@ import common.helpers as helpers
 from common.schema import Schema
 # from utilities import utils
 
+class Operation(Enum):
+    GET = "get"
+    POST = "post"
+    PUT = "put"
+
+
 BASE_DIR = Path(__file__).resolve().parent
 
 
-def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates, schema: Schema):
+def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates, schema: Schema, operation: Operation) -> Dict[str, Any]:
     """Collect all of the placeholders your templates expect."""
     # Add the id to the metadata
     fields =  { 'id' : { 'type': 'ObjectId', 'autoGenerate': True }  } 
@@ -35,23 +42,42 @@ def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates
     base_field_lines = []   # declarations for fields that are not autoGenerate or autoUpdate
     auto_field_lines = []   # declarations for fields that are autoGenerate or autoUpdate
     auto_update_lines: List[str] = []         # save function which is for autoUpdate fields
-    validator_lines: List[str] = []    # validators for fields that are not autoGenerate or autoUpdate
+    enum_lines = []
+    # validator_lines: List[str] = []    # validators for fields that are not autoGenerate or autoUpdate
 
     # Add the id to the metadata and fields
-    base_field_lines.append("id: Optional[str] = Field(default=None, alias='_id')")
+    if operation == Operation.GET:
+        base_field_lines.append("id: str")
 
     for field_name, info in fields.items():
-        base, init = type_annotation(info, schema)
-        if field_name != "id":
-            line = f"{field_name}: {base} = {init}"
-            if info.get("autoGenerate", False):
-                auto_field_lines.append(line)
-            elif info.get("autoUpdate", False):   # autoupdate needs to be in save()
-                auto_field_lines.append(line)
-                auto_update_lines.append(f"self.{field_name} = datetime.now(timezone.utc)")
+        auto_field: bool = info.get("autoGenerate", False) or info.get("autoUpdate", False)
+        if info.get('enum') is not None:
+            # For enums, we need to use the enum type
+            required = "" if info.get('required', False) else " | None" # required modifier
+            # For UPDATE operations, all fields are optional
+            if operation == Operation.PUT or not info.get('required', False):
+                field_init = "Field(default=None)"
             else:
+                field_init = "Field(...)"
+            line = f"{field_name}: {field_name.capitalize()}Enum{required} = {field_init}"
+            # Filter out autoGenerate and autoUpdate fields for CREATE/UPDATE operations
+            if operation == Operation.GET or not auto_field:
                 base_field_lines.append(line)
-                validator_lines = validator_lines + build_validator(field_name, info, schema)
+            enum_lines.extend(generate_enum_class(field_name, info['enum']['values']))
+        else:
+            base, init = type_annotation(info, schema, operation)
+            if field_name != "id":
+                line = f"{field_name}: {base} = {init}"
+                if info.get("autoGenerate", False):
+                    auto_field_lines.append(line)
+                elif info.get("autoUpdate", False):   # autoupdate needs to be in save()
+                    auto_field_lines.append(line)
+                    auto_update_lines.append(f"self.{field_name} = datetime.now(timezone.utc)")
+                else:
+                    # Filter out autoGenerate and autoUpdate fields for CREATE/UPDATE operations
+                    if operation == Operation.GET or not auto_field:
+                        base_field_lines.append(line)
+                    # validator_lines = validator_lines + build_validator(field_name, info, schema)
 
     vars = {
         "Entity":           entity,
@@ -60,7 +86,8 @@ def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates
         "BaseFields":       base_field_lines, 
         "AutoFields":       auto_field_lines, 
         "UniqueList":       json.dumps(e_def.get("unique", [])),
-        "MappingsDict":     pprint.pformat(get_elastic_search_mapping(entity, fields, schema), indent=4),
+        "EnumClasses":      '\n'.join(enum_lines)
+        # "MappingsDict":     pprint.pformat(get_elastic_search_mapping(entity, fields, schema), indent=4),
     }
 
     # generate the save function if there are any autoUpdate fields
@@ -70,8 +97,8 @@ def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates
         # vars["SaveFunction"] = save_lines
 
     # generate the validators if there are any 
-    if len(validator_lines) > 0:
-        vars["Validators"] = validator_lines
+    # if len(validator_lines) > 0:
+    #     vars["Validators"] = validator_lines
 
     return vars
 
@@ -98,13 +125,18 @@ def generate_models(schema_file: str, path_root: str):
         if defs.get("abstract", False):
             continue
 
-        vars_map = build_vars(entity, defs, templates, schema)
-        out: List[str] = []
+        vars = build_vars(entity, defs, templates, schema, Operation.GET)
+        out: List[str] =  templates.render("base", vars)
+        out.append("")
 
-        for i in range(1, len(templates.list())):
-            rendered = templates.render(str(i), vars_map)
-            out.extend(rendered)
-            out.append("")   # blank line between template blocks
+        vars = build_vars(entity, defs, templates, schema, Operation.POST)
+        out1: List[str] =  templates.render("create", vars)
+        out.extend(out1)
+        out.append("")
+
+        vars = build_vars(entity, defs, templates, schema, Operation.PUT)
+        out1 =  templates.render("update", vars)
+        out.extend(out1)
 
         helpers.write(path_root, "models", f"{entity.lower()}_model.py", out)
         # print(f"Generated {entity.lower()}_model.py")
