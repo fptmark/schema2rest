@@ -202,8 +202,8 @@ async def handle_exception_with_notifications(
     request: Request, 
     exc: Exception, 
     status_code: int,
-    entity: str = None,
-    operation: str = None,
+    entity: str = '',
+    operation: str = '',
     notification_handler = None
 ) -> JSONResponse:
     """Generic exception handler using notification system"""

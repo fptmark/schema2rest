@@ -188,6 +188,131 @@ class SimpleNotificationCollection:
         
         return response
 
+    def to_entity_grouped_response(self, data: Any = None, is_bulk: bool = False) -> Dict[str, Any]:
+        """Convert to entity-grouped API response format"""
+        
+        # Group notifications by entity_id
+        entity_notifications = self._group_by_entity()
+        
+        # Determine overall status
+        status = self._determine_status(entity_notifications, data, is_bulk)
+        
+        # Always ensure data is an array for consistency
+        if data is not None and not isinstance(data, list):
+            data = [data]
+        
+        response = {
+            "status": status,
+            "data": data
+        }
+        
+        # Only include notifications if there are issues
+        if entity_notifications:
+            response["notifications"] = entity_notifications
+        
+        # Include summary if there are notifications or it's bulk
+        if entity_notifications or is_bulk:
+            response["summary"] = self._get_entity_summary(entity_notifications, data)
+            
+        return response
+
+    def _group_by_entity(self) -> Dict[str, Dict[str, Any]]:
+        """Group notifications by entity_id"""
+        grouped = {}
+        
+        for notification in self.notifications:
+            entity_id = notification.entity_id if notification.entity_id is not None else "null"
+            
+            if entity_id not in grouped:
+                grouped[entity_id] = {
+                    "entity_id": notification.entity_id,
+                    "entity_type": notification.entity or "Unknown",
+                    "status": "success",
+                    "errors": [],
+                    "warnings": []
+                }
+            
+            # Convert notification to simplified format
+            notif_dict = {
+                "type": notification.type.value,
+                "severity": notification.level.value,
+                "message": notification.message
+            }
+            if notification.field_name:
+                notif_dict["field"] = notification.field_name
+            if notification.value is not None:
+                notif_dict["value"] = notification.value
+                
+            # Add to appropriate list and update entity status
+            if notification.level == NotificationLevel.ERROR:
+                grouped[entity_id]["errors"].append(notif_dict)
+                grouped[entity_id]["status"] = "failed"
+            elif notification.level == NotificationLevel.WARNING:
+                grouped[entity_id]["warnings"].append(notif_dict)
+                if grouped[entity_id]["status"] == "success":
+                    grouped[entity_id]["status"] = "warning"
+        
+        return grouped
+
+    def _determine_status(self, entity_notifications: Dict[str, Dict], data: Any, is_bulk: bool) -> str:
+        """Determine overall response status based on entity notifications"""
+        
+        if not entity_notifications:
+            return "perfect"
+        
+        has_failures = any(entity["status"] == "failed" for entity in entity_notifications.values())
+        
+        if is_bulk:
+            # For bulk operations, if we have any data, it's completed even with failures
+            if data is not None and (isinstance(data, list) and len(data) > 0 or data):
+                return "completed"
+            else:
+                return "failed"
+        else:
+            # For single entity operations
+            if has_failures:
+                return "failed"
+            else:
+                return "completed"
+
+    def _get_entity_summary(self, entity_notifications: Dict[str, Dict], data: Any) -> Dict[str, Any]:
+        """Get summary counts based on entity notifications"""
+        
+        # Count individual notifications and entities by status
+        perfect_entities = 0
+        warning_entities = 0
+        error_entities = 0
+        total_warnings = 0
+        total_errors = 0
+        
+        for entity in entity_notifications.values():
+            if entity["status"] == "failed":
+                error_entities += 1
+                total_errors += len(entity["errors"])
+                total_warnings += len(entity["warnings"])
+            elif entity["status"] == "warning":
+                warning_entities += 1
+                total_warnings += len(entity["warnings"])
+            else:
+                perfect_entities += 1
+        
+        # Calculate total entities (data is always an array now)
+        total_from_data = len(data) if data is not None else 0
+            
+        # Total is either from data + failed entities, or from notifications
+        total_entities = max(total_from_data + error_entities, len(entity_notifications))
+        
+        # If no notifications, all returned entities are perfect
+        if not entity_notifications:
+            perfect_entities = total_entities
+        
+        return {
+            "total_entities": total_entities,
+            "perfect": perfect_entities,
+            "warnings": total_warnings,
+            "errors": total_errors
+        }
+
     def _log_notification(self, notification: NotificationDetail, indent: int = 0) -> None:
         """Log notification and its details to console"""
         log_level_map = {

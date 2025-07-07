@@ -22,15 +22,17 @@ class ValidationError(HTTPException):
         self, 
         message: str,
         entity: str,
-        invalid_fields: List[ValidationFailure]
+        invalid_fields: List[ValidationFailure],
+        entity_id: Optional[str] = None
     ):
         self.message = message
         self.entity = entity
         self.invalid_fields = invalid_fields
+        self.entity_id = entity_id
         super().__init__(status_code=422, detail=message)
     
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "detail": {
                 "message": self.message,
                 "error_type": self.__class__.__name__,
@@ -40,6 +42,9 @@ class ValidationError(HTTPException):
                 ]
             }
         }
+        if self.entity_id:
+            result["detail"]["entity_id"] = self.entity_id
+        return result
 
 class NotFoundError(HTTPException):
     """Error raised when an entity is not found"""

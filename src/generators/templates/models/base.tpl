@@ -10,7 +10,7 @@ from app.db import DatabaseFactory
 import app.utils as helpers
 from app.config import Config
 from app.errors import ValidationError, ValidationFailure, NotFoundError, DuplicateError, DatabaseError
-from app.notification import notify_validation_error, NotificationType
+from app.notification import notify_validation_error, NotificationType, start_notifications, end_notifications, NotificationLevel, NotificationType
 
 {{EnumClasses}}
 
@@ -39,15 +39,17 @@ class {{Entity}}(BaseModel):
         return helpers.get_metadata(cls._metadata)
 
     @classmethod
-    async def get_all(cls) -> tuple[Sequence[Self], List[ValidationError], int]:
+    async def get_all(cls) -> Dict[str, Any]:
         try:
+            # Start notification collection
+            notifications = start_notifications("{{Entity}}", "get_all")
+
             get_validations, unique_validations = Config.validations(True)
             unique_constraints = cls._metadata.get('uniques', []) if unique_validations else []
             
             raw_docs, warnings, total_count = await DatabaseFactory.get_all("{{EntityLower}}", unique_constraints)
             
             {{EntityLower}}s = []
-            validation_errors = []
             
             # Conditional validation - validate AFTER read if requested
             if get_validations:
@@ -57,30 +59,37 @@ class {{Entity}}(BaseModel):
                     except PydanticValidationError as e:
                         # Convert Pydantic errors to notifications
                         for error in e.errors():
-                            notify_validation_error(
-                                message=f"Validation failed for field '{error['loc'][-1]}': {error['msg']}",
+                           notifications.add(
+                                message=error['msg'],
+                                level=NotificationLevel.WARNING,
+                                type=NotificationType.VALIDATION,
                                 entity="{{Entity}}",
-                                field=str(error['loc'][-1]),
+                                field_name=str(error['loc'][-1]),
                                 value=error.get('input'),
-                                entity_id = doc.get('id')
+                                entity_id=doc.get('id')
                             )
-                            validation_errors.append(ValidationError(
-                                message=f"Validation failed for field '{error['loc'][-1]}': {error['msg']}",
-                                entity="{{Entity}}",
-                                invalid_fields=[ValidationFailure(
-                                    field=str(error['loc'][-1]),
-                                    message=error['msg'],
-                                    value=error.get('input')
-                                )]
-                            ))
+
                         # Create instance without validation for failed docs
                         {{EntityLower}}s.append(cls.model_construct(**doc))
             else:
                 {{EntityLower}}s = [cls.model_construct(**doc) for doc in raw_docs]  # NO validation  
             
-            # Add database warnings to validation errors
-            validation_errors.extend([ValidationError(message=w, entity="{{Entity}}", invalid_fields=[]) for w in warnings])
-            return {{EntityLower}}s, validation_errors, total_count
+            # Add database warnings
+            for warning in warnings:
+                notifications.add(
+                    message=warning,
+                    level=NotificationLevel.WARNING,
+                    type=NotificationType.DATABASE,
+                    entity="{{Entity}}"
+                )
+            
+            # Convert models to dictionaries for FastAPI response validation
+            {{EntityLower}}_data = [{{EntityLower}}.model_dump() for {{EntityLower}} in {{EntityLower}}s]
+            
+            # End notification collection and return entity-grouped response
+            collection = end_notifications()
+            return collection.to_entity_grouped_response(data={{EntityLower}}_data, is_bulk=True)
+
         except Exception as e:
             raise DatabaseError(str(e), "{{Entity}}", "get_all")
 

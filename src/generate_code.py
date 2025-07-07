@@ -7,7 +7,7 @@ from pathlib import Path
 # from common.helpers import valid_backend
 
 from generators.models.gen_model_main import generate_models
-from generators.gen_routes import generate_routes
+# from generators.gen_routes import generate_routes
 from generators.gen_service_routes import generate_service_routes
 from generators.gen_main import generate_main
 from convert.schemaConvert import convert_schema
@@ -21,7 +21,7 @@ def generate_code(schema_file, generic_file_dir, base_output_dir):
         yaml = convert_schema(schema_file)
         if yaml:
             generate_main(yaml, base_output_dir)
-            generate_routes(yaml, base_output_dir)
+            # generate_routes(yaml, base_output_dir)
             generate_models(yaml, base_output_dir)
             generate_service_routes(yaml, generic_file_dir, base_output_dir)
             

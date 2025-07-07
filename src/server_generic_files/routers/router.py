@@ -7,7 +7,7 @@ eliminating the need for metadata services, reflection, or async complexity.
 
 from pathlib import Path
 from fastapi import APIRouter, Request
-from typing import Dict, Any, List, Optional, Type
+from typing import Dict, Any, List, Optional, Type, Union
 from pydantic import BaseModel, Field, create_model
 import logging
 
@@ -27,19 +27,23 @@ def create_response_models(entity_cls: Type[BaseModel]):
     
     # Create response models with explicit model creation for better OpenAPI support
     response_fields = {
-        'data': (Optional[entity_cls], None),
+        'data': (Optional[List[Dict[str, Any]]], Field(default_factory=list)),
         'message': (Optional[str], None),
         'level': (Optional[str], None),
         'metadata': (Optional[Dict[str, Any]], None),
-        'notifications': (Optional[List[Dict[str, Any]]], None),
+        'notifications': (Optional[Dict[str, Dict[str, Any]]], None),
+        'status': (Optional[str], None),
+        'summary': (Optional[Dict[str, Any]], None),
     }
     
     list_response_fields = {
-        'data': (List[Dict[str, Any]], Field(default_factory=list)),
+        'data': (Optional[List[Dict[str, Any]]], Field(default_factory=list)),
         'message': (Optional[str], None),
         'level': (Optional[str], None),
         'metadata': (Optional[Dict[str, Any]], None),
-        'notifications': (Optional[List[Dict[str, Any]]], None),
+        'notifications': (Optional[Dict[str, Dict[str, Any]]], None),
+        'status': (Optional[str], None),
+        'summary': (Optional[Dict[str, Any]], None),
     }
     
     # Create models with proper type annotations for OpenAPI
