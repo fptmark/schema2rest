@@ -62,18 +62,10 @@ class StandaloneOpenAPIGenerator:
         # Add root directory's parent to Python path for imports
         sys.path.insert(0, str(root_path.parent))
 
-        # Calculate module path for imports
-        if root_path.is_absolute():
-            module_prefix = root_path.name
-        else:
-            module_prefix = str(root_path).replace('/', '.').replace('\\', '.')
-
-        model_path = f"{module_prefix}.app.models"
-
         for entity_name, model_class in schema.concrete_entities().items():
             print(f"   📄 Processing {entity_name}...")
 
-            module_name = f"{model_path}.{entity_name.lower()}_model"
+            module_name = f"app.models.{entity_name.lower()}_model"
             try:
                 module = importlib.import_module(module_name)
                 model_class = getattr(module, entity_name)
@@ -598,7 +590,7 @@ def main():
         spec = generator.generate(dir)
         
         # Save to file
-        output_file = Path(dir, "app", "openapi.json")
+        output_file = Path(dir, "openapi.json")
         with open(output_file, 'w') as f:
             json.dump(spec, f, indent=2)
         
