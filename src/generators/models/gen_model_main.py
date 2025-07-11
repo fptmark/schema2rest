@@ -25,9 +25,9 @@ BASE_DIR = Path(__file__).resolve().parent
 def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates, schema: Schema, operation: Operation) -> Dict[str, Any]:
     """Collect all of the placeholders your templates expect."""
     # Add the id to the metadata
-    fields =  { 'id' : { 'type': 'ObjectId', 'autoGenerate': True }  } 
+    # fields =  { 'id' : { 'type': 'ObjectId', 'autoGenerate': True }  } 
 
-    fields.update( e_def.get("fields", {}) )
+    fields = e_def.get("fields", {}) 
     operations = e_def.get("operations", "")
     ui = e_def.get("ui", {})
     services = e_def.get("service", {})
@@ -46,8 +46,8 @@ def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates
     # validator_lines: List[str] = []    # validators for fields that are not autoGenerate or autoUpdate
 
     # Add the id to the metadata and fields
-    if operation == Operation.GET:
-        base_field_lines.append("id: str")
+    # if operation == Operation.GET:
+    #     base_field_lines.append("id: str")
 
     for field_name, info in fields.items():
         auto_field: bool = info.get("autoGenerate", False) or info.get("autoUpdate", False)
@@ -66,17 +66,17 @@ def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates
             enum_lines.extend(generate_enum_class(field_name, info['enum']['values']))
         else:
             base, init = type_annotation(info, schema, operation)
-            if field_name != "id":
-                line = f"{field_name}: {base} = {init}"
-                if info.get("autoGenerate", False):
-                    auto_field_lines.append(line)
-                elif info.get("autoUpdate", False):   # autoupdate needs to be in save()
-                    auto_field_lines.append(line)
-                    auto_update_lines.append(f"self.{field_name} = datetime.now(timezone.utc)")
-                else:
-                    # Filter out autoGenerate and autoUpdate fields for CREATE/UPDATE operations
-                    if operation == Operation.GET or not auto_field:
-                        base_field_lines.append(line)
+            # if field_name != "id":
+            line = f"{field_name}: {base} = {init}"
+            if info.get("autoGenerate", False):
+                auto_field_lines.append(line)
+            elif info.get("autoUpdate", False):   # autoupdate needs to be in save()
+                auto_field_lines.append(line)
+                auto_update_lines.append(f"self.{field_name} = datetime.now(timezone.utc)")
+            else:
+                # Filter out autoGenerate and autoUpdate fields for CREATE/UPDATE operations
+                if operation == Operation.GET or not auto_field:
+                    base_field_lines.append(line)
                     # validator_lines = validator_lines + build_validator(field_name, info, schema)
 
     vars = {
