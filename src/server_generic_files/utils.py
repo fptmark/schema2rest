@@ -13,13 +13,14 @@ import re
 
 T = TypeVar('T')
 
-def load_settings(config_file: Path | None) -> Dict[str, Any]:
+def load_settings(config_file: Path | None, required: bool = True) -> Dict[str, Any]:
     try:
         if config_file:
             with open(config_file, 'r') as config_handle:
                 return json.load(config_handle)
     except Exception as e:
-        logging.error(f"Error loading config file {config_file}: {e}")
+        if required:
+            logging.error(f"Error loading config file {config_file}: {e}")
         return {}
 
     return {}
@@ -36,30 +37,12 @@ def deep_merge_dicts(dest, override):
         else:
             dest[key] = value
 
-def parse_currency(value):
-    if value is None:
-        return None
-    
-    if isinstance(value, (int, float)):
-        return value
-    
-    # Remove $, commas, parentheses, whitespace
-    cleaned = re.sub(r'[$,\s()]', '', str(value))
-    
-    # Handle negative in parentheses
-    if cleaned.startswith('(') and cleaned.endswith(')'):
-        cleaned = f'-{cleaned[1:-1]}'
-    
-    try:
-        return float(cleaned)
-    except ValueError:
-        return None
 
-def get_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
+def get_metadata(entity: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
     """Get metadata for a model with proper type hints"""
-    overrides = load_settings(Path('overrides.json')) or {}
-    name = metadata.get('entity', '')
-    entity_cfg = overrides.get(name)
+    overrides = load_settings(Path('overrides.json'), False) or {}
+    # name = metadata.get('fields', '')
+    entity_cfg = overrides.get(entity, {})
     if entity_cfg:
         deep_merge_dicts(metadata, entity_cfg)
     return metadata
