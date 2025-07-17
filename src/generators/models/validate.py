@@ -141,7 +141,7 @@ def type_annotation(info: Dict[str, Any], schema, operation):
     auto_field: bool = auto_gen or auto_up
 
     # base
-    if t == "ISODate":
+    if t == "Date" or t == "Datetime" or t == "DateTime":
         base = "datetime"
     elif t in ("String","str", "text"):
         base = "str"
