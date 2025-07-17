@@ -11,7 +11,7 @@ from app.db import DatabaseFactory
 import app.utils as helpers
 from app.config import Config
 from app.errors import ValidationError, ValidationFailure, NotFoundError, DuplicateError, DatabaseError
-from app.notification import notify_validation_error, notify_warning, NotificationType
+from app.notification import notify_warning, NotificationType
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,12 @@ class {{Entity}}(BaseModel):
     id: str | None = Field(default=None)
     {{BaseFields}}
     {{AutoFields}}
+
+    model_config = ConfigDict(
+        json_encoders={
+            datetime: lambda v: v.isoformat() + 'Z' if v else None  # Always UTC with Z suffix
+        }
+    )
 
     _metadata: ClassVar[Dict[str, Any]] = {{Metadata}}
 
@@ -67,12 +73,14 @@ class {{Entity}}(BaseModel):
   
                         for error in e.errors():
                             field_name = str(error['loc'][-1])
-                            notify_validation_error(
+                            notify_warning(
                                 message=f"{{Entity}} {entity_id}.{field_name}:  validation failed - {error['msg']}",
+                                type=NotificationType.VALIDATION,
                                 entity="{{Entity}}",
-                                field=field_name,
+                                field_name=field_name,
                                 value=error.get('input'),
-                                operation="get_all"
+                                operation="get_all",
+                                entity_id=entity_id
                             )
 
                         # Create instance without validation for failed docs
@@ -147,17 +155,21 @@ class {{Entity}}(BaseModel):
                         entity_id = "missing"
                     for error in e.errors():
                         field_name = str(error['loc'][-1])
-                        notify_validation_error(
+                        notify_warning(
                             message=f"{{Entity}} {entity_id}: {field_name} validation failed - {error['msg']}",
+                            type=NotificationType.VALIDATION,
                             entity="{{Entity}}",
-                            field=field_name,
+                            field_name=field_name,
                             value=error.get('input'),
-                            operation="get"
+                            operation="get",
+                            entity_id=entity_id
                         )
-                    return cls(**raw_doc), warnings  # Fallback to no validation
+                    return cls.model_construct(**raw_doc), warnings  # Fallback to no validation
             else:
-                return cls(**raw_doc), warnings  # NO validation
+                return cls.model_construct(**raw_doc), warnings  # NO validation
         except NotFoundError:
+            raise
+        except DatabaseError:
             raise
         except Exception as e:
             raise DatabaseError(str(e), "{{Entity}}", "get")
@@ -185,14 +197,15 @@ class {{Entity}}(BaseModel):
 
                 for err in e.errors():
                     field_name = str(err["loc"][-1])
-                    notify_validation_error(
+                    notify_warning(
                         message=f"{{Entity}} {entity_id}: {field_name} validation failed - {err['msg']}",
+                        type=NotificationType.VALIDATION,
                         entity="{{Entity}}",
-                        field=field_name,
+                        field_name=field_name,
                         value=err.get("input"),
                         operation="save"
                     )
-                failures = [ValidationFailure(field=str(err["loc"][-1]), message=err["msg"], value=err.get("input")) for err in e.errors()]
+                failures = [ValidationFailure(field_name=str(err["loc"][-1]), message=err["msg"], value=err.get("input")) for err in e.errors()]
                 raise ValidationError(message="Validation failed before save", entity="{{Entity}}", invalid_fields=failures)
             
             # Save document with unique constraints - pass complete data
@@ -213,12 +226,6 @@ class {{Entity}}(BaseModel):
  
     @classmethod
     async def delete(cls, {{EntityLower}}_id: str) -> tuple[bool, List[str]]:
-        if not {{EntityLower}}_id:
-            raise ValidationError(
-                message="Cannot delete {{EntityLower}} without ID",
-                entity="{{Entity}}",
-                invalid_fields=[ValidationFailure("id", "ID is required for deletion", None)]
-            )
         try:
             result = await DatabaseFactory.delete_document("{{EntityLower}}", {{EntityLower}}_id)
             if not result:
