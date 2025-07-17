@@ -8,11 +8,11 @@ notification handling.
 
 import json
 import logging
-import warnings as python_warnings
 from typing import Dict, Any, Type
 from urllib.parse import unquote
 from fastapi import Request
 
+from app.config import Config
 from app.routers.router_factory import ModelImportCache
 from app.notification import (
     start_notifications, end_notifications,
@@ -24,7 +24,26 @@ from app.errors import ValidationError, NotFoundError, DuplicateError
 logger = logging.getLogger(__name__)
 
 
-async def add_view_data(entity_dict: Dict[str, Any], view_spec: Dict[str, Any] | None, entity_name: str) -> None:
+async def auto_validate_fk_fields(entity_dict: Dict[str, Any], entity_name: str, entity_cls: Type) -> None:
+    """Auto-validate FK fields when get_validations enabled but no view parameter"""
+    metadata = entity_cls._metadata
+    entity_id = entity_dict.get('id', 'unknown')
+    
+    for field_name, field_meta in metadata.get('fields', {}).items():
+        if field_meta.get('type') == 'ObjectId' and entity_dict.get(field_name):
+            try:
+                fk_entity_name = field_name[:-2].capitalize()  # Remove 'Id' suffix
+                fk_entity_cls = ModelImportCache.get_model_class(fk_entity_name)
+                await fk_entity_cls.get(entity_dict[field_name])
+            except NotFoundError:
+                notify_warning(f"{entity_name} {entity_id}: {field_name} '{entity_dict[field_name]}' not found", 
+                             NotificationType.DATABASE, entity_id=entity_id)
+            except ImportError:
+                # FK entity class doesn't exist - skip validation
+                pass
+
+
+async def add_view_data(entity_dict: Dict[str, Any], view_spec: Dict[str, Any] | None, entity_name: str, get_validations: bool = False) -> None:
     """Add foreign key data to entity based on view specification."""
     if not view_spec:
         return
@@ -65,6 +84,7 @@ async def add_view_data(entity_dict: Dict[str, Any], view_spec: Dict[str, Any] |
                     entity_dict[fk_name] = fk_data
                     
                 except Exception as fk_error:
+                    # Always display FK errors when view parameter provided - we're already doing the lookup
                     # Log FK lookup error but don't fail the whole request
                     entity_id = entity_dict.get('id', 'unknown')
                     
@@ -77,7 +97,7 @@ async def add_view_data(entity_dict: Dict[str, Any], view_spec: Dict[str, Any] |
                     else:
                         clean_msg = f"{fk_id_field} failed to load: {error_msg}"
                     
-                    notify_warning(f"{entity_name} {entity_id}: {clean_msg}", NotificationType.DATABASE)
+                    notify_warning(f"{entity_name} {entity_id}: {clean_msg}", NotificationType.DATABASE, entity_id=entity_id)
                     # Return an object indicating the FK doesn't exist
                     entity_dict[fk_name] = {"exists": False}
     
@@ -88,6 +108,7 @@ async def add_view_data(entity_dict: Dict[str, Any], view_spec: Dict[str, Any] |
 
 async def list_entities_handler(entity_cls: Type, entity_name: str, request: Request) -> Dict[str, Any]:
     """Reusable handler for LIST endpoint."""
+    get_validations, _ = Config.validations(True)
     entity_lower = entity_name.lower()
     notifications = start_notifications(entity=entity_name, operation=f"list_{entity_lower}s")
     
@@ -105,7 +126,16 @@ async def list_entities_handler(entity_cls: Type, entity_name: str, request: Req
             entity_data = []
             for entity in response['data']:
                 entity_dict = entity.model_dump() if hasattr(entity, 'model_dump') else entity
-                await add_view_data(entity_dict, view_spec, entity_name)
+                await add_view_data(entity_dict, view_spec, entity_name, get_validations)
+                entity_data.append(entity_dict)
+            response['data'] = entity_data
+        
+        # Auto-validate FK fields when get_validations=True and no view parameter provided
+        elif response.get('data') and get_validations and not view_spec:
+            entity_data = []
+            for entity in response['data']:
+                entity_dict = entity.model_dump() if hasattr(entity, 'model_dump') else entity
+                await auto_validate_fk_fields(entity_dict, entity_name, entity_cls)
                 entity_data.append(entity_dict)
             response['data'] = entity_data
         
@@ -121,6 +151,7 @@ async def list_entities_handler(entity_cls: Type, entity_name: str, request: Req
 
 async def get_entity_handler(entity_cls: Type, entity_name: str, entity_id: str, request: Request) -> Dict[str, Any]:
     """Reusable handler for GET endpoint."""
+    get_validations, _ = Config.validations(False)
     entity_lower = entity_name.lower()
     notifications = start_notifications(entity=entity_name, operation=f"get_{entity_lower}")
     
@@ -137,30 +168,23 @@ async def get_entity_handler(entity_cls: Type, entity_name: str, entity_id: str,
             notify_warning(warning, NotificationType.DATABASE)
         
         # Process FK includes if view parameter is provided
-        # Capture any serialization warnings during model_dump
-        with python_warnings.catch_warnings(record=True) as caught_warnings:
-            python_warnings.simplefilter("always")
-            entity_dict = entity.model_dump()
-            
-            # Add any serialization warnings as notifications
-            for warning in caught_warnings:
-                if "datetime" in str(warning.message).lower():
-                    notify_warning(
-                        f"Datetime serialization warning for {entity_name} {entity_dict.get('id', 'unknown')}: {warning.message}",
-                        NotificationType.VALIDATION
-                    )
+        # Serialize entity data (datetime warnings should be eliminated by json_encoders)
+        entity_dict = entity.model_dump()
         
         # entity_dict['exists'] = True  # If no exception thrown, entity exists
-        await add_view_data(entity_dict, view_spec, entity_name)
+        await add_view_data(entity_dict, view_spec, entity_name, get_validations)
+        
+        # Auto-validate FK fields when get_validations=True and no view parameter provided
+        if get_validations and not view_spec:
+            await auto_validate_fk_fields(entity_dict, entity_name, entity_cls)
         
         collection = end_notifications()
         return collection.to_entity_grouped_response(entity_dict, is_bulk=False)
     except NotFoundError:
-        notify_error(f"{entity_name} not found", NotificationType.BUSINESS)
-        # Return object with exists=False for consistent UI handling
-        not_found_entity = {"id": entity_id} #, "exists": False}
-        collection = end_notifications()
-        return collection.to_entity_grouped_response(not_found_entity, is_bulk=False)
+        # Let the NotFoundError bubble up to FastAPI's exception handler
+        # which will return a proper 404 response
+        end_notifications()
+        raise
     except Exception as e:
         notify_error(f"Failed to retrieve {entity_lower}: {str(e)}", NotificationType.SYSTEM)
         collection = end_notifications()
@@ -184,14 +208,16 @@ async def create_entity_handler(entity_cls: Type, entity_name: str, entity_data:
         notify_success(f"{entity_name} created successfully", NotificationType.BUSINESS)
         collection = end_notifications()
         return collection.to_entity_grouped_response(result.model_dump(), is_bulk=False)
-    except (ValidationError, DuplicateError) as e:
-        notify_validation_error(f"Failed to create {entity_lower}: {str(e)}")
-        collection = end_notifications()
-        return collection.to_entity_grouped_response(None, is_bulk=False)
-    except Exception as e:
-        notify_error(f"Failed to create {entity_lower}: {str(e)}", NotificationType.SYSTEM)
-        collection = end_notifications()
-        return collection.to_entity_grouped_response(None, is_bulk=False)
+    except (ValidationError, DuplicateError):
+        # Let these exceptions bubble up to FastAPI exception handlers
+        # which will return proper HTTP status codes (422, 409)
+        end_notifications()
+        raise
+    except Exception:
+        # Let generic exceptions bubble up to FastAPI exception handler
+        # which will return proper HTTP status code (500)
+        end_notifications()
+        raise
     finally:
         end_notifications()
 
@@ -220,18 +246,16 @@ async def update_entity_handler(entity_cls: Type, entity_name: str, entity_id: s
         notify_success(f"{entity_name} updated successfully", NotificationType.BUSINESS)
         collection = end_notifications()
         return collection.to_entity_grouped_response(result.model_dump(), is_bulk=False)
-    except NotFoundError as e:
-        notify_error(f"{entity_name} not found", NotificationType.BUSINESS)
-        collection = end_notifications()
-        return collection.to_entity_grouped_response(None, is_bulk=False)
-    except (ValidationError, DuplicateError) as e:
-        notify_validation_error(f"Failed to update {entity_lower}: {str(e)}")
-        collection = end_notifications()
-        return collection.to_entity_grouped_response(None, is_bulk=False)
-    except Exception as e:
-        notify_error(f"Failed to update {entity_lower}: {str(e)}", NotificationType.SYSTEM)
-        collection = end_notifications()
-        return collection.to_entity_grouped_response(None, is_bulk=False)
+    except (NotFoundError, ValidationError, DuplicateError):
+        # Let these exceptions bubble up to FastAPI exception handlers
+        # which will return proper HTTP status codes (404, 422, 409)
+        end_notifications()
+        raise
+    except Exception:
+        # Let generic exceptions bubble up to FastAPI exception handler
+        # which will return proper HTTP status code (500)
+        end_notifications()
+        raise
     finally:
         end_notifications()
 
@@ -250,12 +274,14 @@ async def delete_entity_handler(entity_cls: Type, entity_name: str, entity_id: s
         collection = end_notifications()
         return collection.to_entity_grouped_response(None, is_bulk=False)
     except NotFoundError:
-        notify_error(f"{entity_name} not found", NotificationType.BUSINESS)
-        collection = end_notifications()
-        return collection.to_entity_grouped_response(None, is_bulk=False)
-    except Exception as e:
-        notify_error(f"Failed to delete {entity_lower}: {str(e)}", NotificationType.SYSTEM)
-        collection = end_notifications()
-        return collection.to_entity_grouped_response(None, is_bulk=False)
+        # Let NotFoundError bubble up to FastAPI exception handler
+        # which will return proper HTTP status code (404)
+        end_notifications()
+        raise
+    except Exception:
+        # Let generic exceptions bubble up to FastAPI exception handler
+        # which will return proper HTTP status code (500)
+        end_notifications()
+        raise
     finally:
         end_notifications()
