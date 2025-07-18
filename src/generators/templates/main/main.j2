@@ -51,8 +51,8 @@ def parse_args():
                        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                        help='Override log level from config')
     parser.add_argument('--noinitdb', action='store_true',
-                        parser.add_argument('--noinitdb', action='store_true',
-  `
+                           help='Skip automatic database initialization on startup (for large databases)')
+  
     return parser.parse_args()
 
 # Parse command line arguments
@@ -262,7 +262,7 @@ def handle_validation_error_notifications(exc: ValidationError, entity: str, ope
     from app.notification import notify_error, NotificationType
     for field_error in exc.invalid_fields:
         notify_error(field_error.message, NotificationType.VALIDATION, 
-                    entity=entity, field=field_error.field, value=field_error.value)
+                    entity=entity, field_name=field_error.field_name, value=field_error.value)
 
 def handle_request_validation_error_notifications(exc: RequestValidationError, entity: str, operation: str):
     """Handle FastAPI request validation error notifications"""
@@ -272,7 +272,7 @@ def handle_request_validation_error_notifications(exc: RequestValidationError, e
         message = error['msg']
         value = error.get('input')
         notify_validation_error(f"Invalid {field}: {message}", 
-                              field=field, value=value, entity=entity)
+                              field_name=field, value=value, entity=entity)
 
 def handle_not_found_error_notifications(exc: NotFoundError, entity: str, operation: str):
     """Handle not found error notifications"""
@@ -282,7 +282,7 @@ def handle_not_found_error_notifications(exc: NotFoundError, entity: str, operat
 def handle_duplicate_error_notifications(exc: DuplicateError, entity: str, operation: str):
     """Handle duplicate error notifications"""
     from app.notification import notify_validation_error
-    notify_validation_error(exc.message, field=exc.field, value=exc.value, entity=entity)
+    notify_validation_error(exc.message, field_name=exc.field, value=exc.value, entity=entity)
 
 def handle_generic_error_notifications(exc: Exception, entity: str, operation: str):
     """Handle generic error notifications"""
@@ -361,7 +361,6 @@ def main():
     logger.info("Welcome to the {{ project }} Management System")
     logger.info(" Access Swagger docs at http://127.0.0.1:5500/docs")
 
-    # Start the server normally if --initdb is not present
     import uvicorn
     uvicorn.run(
         "app.main:app",
