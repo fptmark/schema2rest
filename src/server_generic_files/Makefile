@@ -28,7 +28,8 @@ help:
 	@echo ""
 	@echo "Developer targets (code generation - requires S2R_DIR):"
 	@echo "  clean       - Remove app directory and start fresh"
-	@echo "  firsttime   - Copy server generic files"
+	@echo "  generic     - Copy server generic files"
+	@echo "  firsttime   - Copy server generic files and setup config files"
 	@echo "  rebuild     - Full rebuild: schema + all generators"
 	@echo "  schema      - Convert schema.mmd to schema.yaml and generate diagram"
 	@echo "  main        - Generate main.py"
@@ -81,8 +82,15 @@ clean:
 	rm -rf app
 	rm -f openapi.json
 
+generic:
+	cp -r $(GENERICS)/* app/
+	mv app/requirements.txt .
+	rm app/Makefile
+	rm app/config/*.json
+
 firsttime:
 	cp -r $(GENERICS) app
+	mv app/requirements.txt .
 	rm app/Makefile
 	mv app/config/*.json .
 
