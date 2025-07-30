@@ -1,4 +1,6 @@
 import logging
+import json
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from elasticsearch import AsyncElasticsearch, NotFoundError as ESNotFoundError
 from bson import ObjectId
@@ -13,7 +15,29 @@ class ElasticsearchDatabase(DatabaseInterface):
         super().__init__()
         self._client: Optional[AsyncElasticsearch] = None
         self._url: str = ""
-        self._dbname: str = ""
+    
+    def _convert_datetime_fields(self, document: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert datetime string fields back to datetime objects for Pydantic compatibility."""
+        if not document:
+            return document
+        
+        # Known datetime fields that need conversion
+        datetime_fields = {'createdAt', 'updatedAt', 'dob'}
+        
+        doc_copy = document.copy()
+        for field_name, value in doc_copy.items():
+            if field_name in datetime_fields and isinstance(value, str):
+                try:
+                    # Parse ISO format datetime strings back to datetime objects
+                    if value.endswith('Z'):
+                        # Remove Z and add +00:00 for proper parsing
+                        value = value[:-1] + '+00:00'
+                    doc_copy[field_name] = datetime.fromisoformat(value)
+                except (ValueError, TypeError):
+                    # If parsing fails, leave as string (Pydantic will handle validation)
+                    pass
+        
+        return doc_copy
 
     @property
     def id_field(self) -> str:
@@ -73,7 +97,7 @@ class ElasticsearchDatabase(DatabaseInterface):
             
             res = await es.search(index=collection, query={"match_all": {}}, size=1000)
             hits = res.get("hits", {}).get("hits", [])
-            results = [{**hit["_source"], "id": hit["_id"]} for hit in hits]
+            results = [self._convert_datetime_fields({**hit["_source"], "id": self._normalize_id(hit["_id"])}) for hit in hits]
             
             # Extract total count from search response
             total_count = res.get("hits", {}).get("total", {}).get("value", 0)
@@ -86,6 +110,55 @@ class ElasticsearchDatabase(DatabaseInterface):
                 operation="get_all"
             )
 
+    async def get_list(self, collection: str, unique_constraints: Optional[List[List[str]]] = None, list_params=None, entity_metadata: Optional[Dict[str, Any]] = None) -> Tuple[List[Dict[str, Any]], List[str], int]:
+        """Get paginated/filtered list of documents from a collection with count."""
+        es = self._get_client()
+
+        if not await es.indices.exists(index=collection):
+            return [], [], 0
+
+        try:
+            from app.models.list_params import ListParams
+            warnings = []
+            
+            # Check unique constraints if provided
+            if unique_constraints:
+                missing_indexes = await self._check_unique_indexes(collection, unique_constraints)
+                if missing_indexes:
+                    warnings.extend(missing_indexes)
+            
+            # If no list_params provided, fall back to get_all behavior
+            if not list_params:
+                return await self.get_all(collection, unique_constraints)
+
+            # Build Elasticsearch query using new helper methods
+            query_body = {
+                "from": (list_params.page - 1) * list_params.page_size,
+                "size": list_params.page_size,
+                "query": self._build_query_filter(list_params, entity_metadata)
+            }
+            
+            # Always add sorting for consistent pagination
+            sort_spec = self._build_sort_spec(list_params)
+            query_body["sort"] = sort_spec
+
+            res = await es.search(index=collection, body=query_body)
+            hits = res.get("hits", {}).get("hits", [])
+            results = [self._convert_datetime_fields({**hit["_source"], "id": self._normalize_id(hit["_id"])}) for hit in hits]
+            
+            # Extract total count from search response
+            total_count = res.get("hits", {}).get("total", {}).get("value", 0)
+            
+            return results, warnings, total_count
+            
+        except Exception as e:
+            raise DatabaseError(
+                message=str(e),
+                entity=collection,
+                operation="get_list"
+            )
+
+
     async def get_by_id(self, collection: str, doc_id: str, unique_constraints: Optional[List[List[str]]] = None) -> Tuple[Dict[str, Any], List[str]]:
         """Get a document by ID."""
         es = self._get_client()
@@ -97,11 +170,31 @@ class ElasticsearchDatabase(DatabaseInterface):
                 if missing_indexes:
                     warnings.extend(missing_indexes)
             
-            res = await es.get(index=collection, id=doc_id)
-            result = {**res["_source"], "id": res["_id"]}
+            # Try the ID as-is first, then try to find by normalized ID if that fails
+            try:
+                res = await es.get(index=collection, id=doc_id)
+            except ESNotFoundError:
+                # If direct lookup fails, try to find document by searching for normalized ID
+                # This handles case where we receive lowercase ID but ES has mixed case
+                search_res = await es.search(
+                    index=collection,
+                    body={
+                        "query": {"match_all": {}},
+                        "size": 10000  # Get all documents to search through
+                    }
+                )
+                
+                for hit in search_res.get("hits", {}).get("hits", []):
+                    if self._normalize_id(hit["_id"]) == self._normalize_id(doc_id):
+                        res = {"_source": hit["_source"], "_id": hit["_id"]}
+                        break
+                else:
+                    raise NotFoundError(collection, doc_id)
+            
+            result = self._convert_datetime_fields({**res["_source"], "id": self._normalize_id(res["_id"])})
             return result, warnings
-        except ESNotFoundError:
-            raise NotFoundError(collection, doc_id)
+        except NotFoundError:
+            raise
         except Exception as e:
             raise DatabaseError(
                 message=str(e),
@@ -157,6 +250,78 @@ class ElasticsearchDatabase(DatabaseInterface):
                 entity=collection,
                 operation="create_collection"
             )
+
+    def _build_query_filter(self, list_params, entity_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Build Elasticsearch query from ListParams with field-type awareness."""
+        if not list_params or not list_params.filters:
+            return {"match_all": {}}
+        
+        must_clauses = []
+        for field, value in list_params.filters.items():
+            if isinstance(value, dict) and ('$gte' in value or '$lte' in value):
+                # Range filter - convert MongoDB-style to Elasticsearch range query
+                range_query = {}
+                if '$gte' in value:
+                    range_query['gte'] = value['$gte']
+                if '$lte' in value:
+                    range_query['lte'] = value['$lte']
+                must_clauses.append({"range": {field: range_query}})
+            else:
+                # Determine matching strategy based on field type
+                field_type = self._get_field_type(field, entity_metadata)
+                if field_type == 'String':
+                    # Text fields: partial match with wildcard on the base field
+                    # Since our mappings create fields as keyword type, use the field directly
+                    must_clauses.append({
+                        "wildcard": {
+                            field: f"*{value}*"
+                        }
+                    })
+                else:
+                    # Non-text fields (enums, numbers, dates, etc.): exact match
+                    # Since our mappings create fields as keyword type, use the field directly
+                    must_clauses.append({"term": {field: value}})
+        
+        if must_clauses:
+            return {"bool": {"must": must_clauses}}
+        else:
+            return {"match_all": {}}
+
+    def _build_sort_spec(self, list_params) -> List[Dict[str, Any]]:
+        """Build Elasticsearch sort specification from ListParams."""
+        if not list_params:
+            # Default sort by createdAt for consistent pagination when no sort specified
+            # Note: Never use _id in sort - it requires fielddata which is disabled by default
+            return [{"createdAt": {"order": "asc"}}]
+        
+        if not list_params.sort_field:
+            # Default sort by createdAt for consistent pagination when no sort specified
+            return [{"createdAt": {"order": "asc"}}]
+        
+        sort_order = "asc" if list_params.sort_order == "asc" else "desc"
+        
+        # Map application "id" field to Elasticsearch "_id" field for sorting
+        # But _id requires fielddata, so we fall back to createdAt
+        if list_params.sort_field == "id":
+            # Cannot sort by _id without enabling fielddata, use createdAt instead
+            return [{"createdAt": {"order": sort_order}}]
+        
+        # Since our mappings create fields as keyword type, use the field directly
+        return [{list_params.sort_field: {"order": sort_order}}]
+
+    def _get_field_type(self, field_name: str, entity_metadata: Optional[Dict[str, Any]]) -> str:
+        """Get field type from entity metadata or default to String."""
+        if not entity_metadata:
+            return 'String'
+        
+        field_info = entity_metadata.get('fields', {}).get(field_name, {})
+        field_type = field_info.get('type', 'String')
+        
+        # Check if field has enum values - treat as exact match even if type is String
+        if 'enum' in field_info:
+            return 'Enum'  # Use exact matching for enum fields
+        
+        return field_type
 
     async def delete_collection(self, collection: str) -> bool:
         """Delete a collection."""
@@ -240,7 +405,7 @@ class ElasticsearchDatabase(DatabaseInterface):
                 
             res = await es.search(index=collection, query={"match_all": {}})
             hits = res.get("hits", {}).get("hits", [])
-            return [{**hit["_source"], "id": hit["_id"]} for hit in hits]
+            return [self._convert_datetime_fields({**hit["_source"], "id": self._normalize_id(hit["_id"])}) for hit in hits]
         except Exception as e:
             raise DatabaseError(
                 message=str(e),

@@ -10,6 +10,8 @@ import app.utils as helpers
 from app.config import Config
 from app.errors import ValidationError, ValidationFailure, NotFoundError, DuplicateError, DatabaseError
 from app.notification import notify_warning, NotificationType
+from app.models.list_params import ListParams
+import app.models.utils as utils
 
 {{EnumClasses}}
 
@@ -44,90 +46,53 @@ class {{Entity}}(BaseModel):
     def get_metadata(cls) -> Dict[str, Any]:
         return helpers.get_metadata("{{Entity}}", cls._metadata)
 
+
     @classmethod
-    async def get_all(cls) -> Dict[str, Any]:
+    async def get_list(cls, list_params: Optional[ListParams] = None, view_spec: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Get paginated, sorted, and filtered list of entity."""
         try:
-            get_validations, unique_validations = Config.validations(True)
+            fk_validations, unique_validations = Config.validations(True)
             unique_constraints = cls._metadata.get('uniques', []) if unique_validations else []
             
-            raw_docs, warnings, total_count = await DatabaseFactory.get_all("{{EntityLower}}", unique_constraints)
+            # Use default pagination if none provided (same as DatabaseFactory does)
+            if list_params is None:
+                list_params = ListParams(page=1, page_size=100)
             
-            {{EntityLower}}s = []
+            # Get filtered data from database
+            raw_docs, warnings, total_count = await DatabaseFactory.get_list("{{EntityLower}}", unique_constraints, list_params, cls._metadata)
             
-            # Conditional validation - validate AFTER read if requested
-            if get_validations:
-                for doc in raw_docs:
-                    try:
-                        {{EntityLower}}s.append(cls.model_validate(doc))
-                    except PydanticValidationError as e:
-                        # Convert Pydantic errors to notifications
-                        entity_id = doc.get('id')
-                        if not entity_id:
-                            notify_warning("Document missing ID field", NotificationType.DATABASE, entity={{Entity}})
-                            entity_id = "missing"
-  
-                        for error in e.errors():
-                            field_name = str(error['loc'][-1])
-                            notify_warning(
-                                message=error['msg'],
-                                type=NotificationType.VALIDATION,
-                                entity="{{Entity}}",
-                                field_name=field_name,
-                                value=error.get('input'),
-                                operation="get_all",
-                                entity_id=entity_id
-                            )
+            # Use common processing
+            {{EntityLower}}_data = utils.process_raw_results(cls, "{{Entity}}", raw_docs, warnings)
+            
+            # Process FK fields if needed
+            if view_spec or fk_validations:
+                for {{EntityLower}}_dict in {{EntityLower}}_data:
+                    await utils.process_entity_fks({{EntityLower}}_dict, view_spec, "{{Entity}}", cls, fk_validations)
 
-                        # Create instance without validation for failed docs
-                        {{EntityLower}}s.append(cls.model_construct(**doc))
-            else:
-                {{EntityLower}}s = [cls.model_construct(**doc) for doc in raw_docs]  # NO validation  
-            
-            # Add database warnings
-            for warning in warnings:
-                notify_warning(warning, NotificationType.DATABASE)
-            
-            # Convert models to dictionaries for FastAPI response validation
-            {{EntityLower}}_data = []
-            for {{EntityLower}} in {{EntityLower}}s:
-                with python_warnings.catch_warnings(record=True) as caught_warnings:
-                    python_warnings.simplefilter("always")
-                    data_dict = {{EntityLower}}.model_dump()
-                    {{EntityLower}}_data.append(data_dict)
-                    
-                    # Add any serialization warnings as notifications
-                    if caught_warnings:
-                        entity_id = data_dict.get('id')
-                        if not entity_id:
-                            notify_warning("Document missing ID field", NotificationType.DATABASE)
-                            entity_id = "missing"
-
-                        datetime_field_names = []
-                        
-                        # Use the model's metadata to find datetime fields
-                        for field_name, field_meta in cls._metadata.get('fields', {}).items():
-                            if field_meta.get('type') == 'ISODate':
-                                if field_name in data_dict and isinstance(data_dict[field_name], str):
-                                    datetime_field_names.append(field_name)
-                        
-                        if datetime_field_names:
-                            field_list = ', '.join(datetime_field_names)
-                            notify_warning(f"{field_list} datetime serialization warnings", NotificationType.VALIDATION, entity="{{Entity}}", entity_id=entity_id)
-                        else:
-                            # Fallback for non-datetime warnings
-                            warning_count = len(caught_warnings)
-                            notify_warning(f"User {entity_id}: {warning_count} serialization warnings", NotificationType.VALIDATION, entity="{{Entity}}")
- 
-            return {"data": {{EntityLower}}_data}
+            return {
+                "data": {{EntityLower}}_data,
+                "page_size": list_params.page_size,
+                "total_count": total_count,
+                "page": list_params.page,
+                "total_pages": (total_count + list_params.page_size - 1) // list_params.page_size,
+                "pagination": {
+                    "page": list_params.page,
+                    "per_page": list_params.page_size,
+                    "total": total_count,
+                    "total_pages": (total_count + list_params.page_size - 1) // list_params.page_size,
+                    "has_next": list_params.page < (total_count + list_params.page_size - 1) // list_params.page_size,
+                    "has_prev": list_params.page > 1
+                }
+            }
             
         except Exception as e:
-            raise DatabaseError(str(e), "{{Entity}}", "get_all")
+            raise DatabaseError(str(e), "{{Entity}}", "get_list")
 
 
     @classmethod
-    async def get(cls, id: str) -> tuple[Self, List[str]]:
+    async def get(cls, id: str, view_spec: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         try:
-            get_validations, unique_validations = Config.validations(False)
+            fk_validations, unique_validations = Config.validations(False)
             unique_constraints = cls._metadata.get('uniques', []) if unique_validations else []
             
             raw_doc, warnings = await DatabaseFactory.get_by_id("{{EntityLower}}", str(id), unique_constraints)
@@ -136,36 +101,24 @@ class {{Entity}}(BaseModel):
             
             # Database warnings are now handled by DatabaseFactory
             
-            # Conditional validation - validate AFTER read if requested
-            if get_validations:
-                try:
-                    return cls.model_validate(raw_doc), warnings  # WITH validation
-                except PydanticValidationError as e:
-                    # Convert validation errors to notifications
-                    entity_id = raw_doc.get('id')
-                    if not entity_id:
-                        notify_warning("Document missing ID field", NotificationType.DATABASE)
-                        entity_id = "missing"
-                    for error in e.errors():
-                        field_name = str(error['loc'][-1])
-                        notify_warning(
-                            message=f"{{Entity}} {entity_id}: {field_name} validation failed - {error['msg']}",
-                            type=NotificationType.VALIDATION,
-                            entity="{{Entity}}",
-                            field_name=field_name,
-                            value=error.get('input'),
-                            operation="get",
-                            entity_id=entity_id
-                        )
-                    return cls.model_construct(**raw_doc), warnings  # Fallback to no validation
-            else:
-                return cls.model_construct(**raw_doc), warnings  # NO validation
+            # Step 1: Use Pydantic validation with notification conversion
+            {{EntityLower}}_instance = utils.validate_with_notifications(cls, raw_doc, "{{Entity}}")
+            
+            # Step 2: Get validated dict and process FK fields if needed
+            {{EntityLower}}_dict = {{EntityLower}}_instance.model_dump()
+            if view_spec or fk_validations:
+                await utils.process_entity_fks({{EntityLower}}_dict, view_spec, "{{Entity}}", cls, fk_validations)
+            
+            return {
+                "data": {{EntityLower}}_dict,
+                "warnings": warnings
+            }
         except NotFoundError:
             raise
         except DatabaseError:
             raise
         except Exception as e:
-            raise DatabaseError(str(e), "{{Entity}}", "get")
+            raise DatabaseError(str(e), "{{Entity}}", "get") 
 
     async def save(self, entity_id: str = '') -> tuple[Self, List[str]]:
         try:
@@ -184,24 +137,27 @@ class {{Entity}}(BaseModel):
                 validated_instance = self.__class__.model_validate(self.model_dump())
                 # Use the validated data for save
                 data = validated_instance.model_dump()
+                                
+                # Validate ObjectId references exist
+                await utils.validate_objectid_references("{{Entity}}", data, self._metadata)
             except PydanticValidationError as e:
                 # Convert to notifications and ValidationError format
                 if len(entity_id) == 0:
-                    notify_warning("User instance missing ID during save", NotificationType.DATABASE)
+                    notify_warning("{{Entity}} instance missing ID during save", NotificationType.DATABASE)
                     entity_id = "missing"
 
-                for err in e.errors():
-                    field_name = str(err["loc"][-1])
+                for error in e.errors():
+                    field_name = str(error["loc"][-1])
                     notify_warning(
-                        message=f"{{Entity}} {entity_id}: {field_name} validation failed - {err['msg']}",
+                        message=error['msg'],
                         type=NotificationType.VALIDATION,
                         entity="{{Entity}}",
                         field_name=field_name,
-                        value=err.get("input"),
+                        value=error.get("input"),
                         operation="save"
                     )
-                failures = [ValidationFailure(field_name=str(err["loc"][-1]), message=err["msg"], value=err.get("input")) for err in e.errors()]
-                raise ValidationError(message="Validation failed before save", entity="{{Entity}}", invalid_fields=failures)
+                failures = [ValidationFailure(field_name=str(error["loc"][-1]), message=error["msg"], value=error.get("input")) for error in e.errors()]
+                raise ValidationError(message=error['msg'], entity="{{Entity}}", invalid_fields=failures)
             
             # Save document with unique constraints - pass complete data
             result, warnings = await DatabaseFactory.save_document("{{EntityLower}}", data, unique_constraints)
