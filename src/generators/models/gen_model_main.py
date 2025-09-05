@@ -72,7 +72,7 @@ def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates
                 auto_field_lines.append(line)
             elif info.get("autoUpdate", False):   # autoupdate needs to be in save()
                 auto_field_lines.append(line)
-                auto_update_lines.append(f"self.{field_name} = datetime.now(timezone.utc)")
+                auto_update_lines.append(f"data['{field_name}'] = datetime.now(timezone.utc)")
             else:
                 # Filter out autoGenerate and autoUpdate fields for CREATE/UPDATE operations
                 if operation == Operation.GET or not auto_field:

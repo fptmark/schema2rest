@@ -18,62 +18,57 @@ class Config:
         return cls._config
 
     @staticmethod
+    def get_db_params(config_data: dict) -> Tuple[str, str, str]:
+        """Get database parameters from config data"""
+        return (
+            config_data.get('database', ''),
+            config_data.get('db_uri', ''), 
+            config_data.get('db_name', '')
+        )
+
+
+    @staticmethod
     def _load_system_config(config_file: str) -> Dict[str, Any]:
         """
         Load and return the configuration from config.json.
         If the file is not found, return default configuration values.
         """
-        config_path = Path(config_file)
-        if not config_path.exists():
-            print(f'Warning: Configuration file {config_file} not found. Using defaults.')
-            return {
-                'mongo_uri': 'mongodb://localhost:27017',
-                'db_name': 'default_db',
-                'server_port': 8000,
-                'environment': 'production',
-                'log_level': 'info',
-                'fk_validation': ''
-            }
-        return load_settings(config_path)
-
-    # @staticmethod
-    # def validation_type() -> str:
-    #     """Get the current validation type from config"""
-    #     return Config._config.get('get_validation', 'default')
-
-    # @staticmethod
-    # def unique_validation() -> bool:
-    #     """Get the current validation type from config"""
-    #     return Config._config.get('unique_validation', False)
+        if len(config_file) > 0:
+            config_path = Path(config_file)
+            if config_path.exists():
+                return load_settings(config_path)
+        print(f'Warning: Configuration file \"{config_file}\" not found. Using defaults.')
+        return {
+            'server_url' : 'http://localhost:5500',
+            'mongo_uri': 'mongodb://localhost:27017',
+            'db_name': 'default_db',
+            'server_port': 8000,
+            'environment': 'production',
+            'log_level': 'info',
+            'validation': '',
+            'case_sensitive': False
+        }
 
     @staticmethod
-    def validations(get_multiple: bool) -> Tuple[bool, bool]:
+    def validation(get_multiple: bool) -> bool:
         """Get the current validation type from config
         
         Rules:
-        - fk_validation="single|multiple" : validate fk on single get (get) or multiple gets (get_all, list)
-        - Any other value: No FK validation
+        - validation="single|multiple" : validate on single get (get) or multiple gets (get_all, list)
+        - Any other value: No validation
+        Notes:
+        - save validates everything by default
+        - get/get_all validates fk only
+        - get with view does selective fk validation based on view spec
         """
-        validation = Config._config.get('fk_validation', '')
+        validation = Config._config.get('validation', '')
         
         if validation == 'multiple':
-            # get_all setting applies to ALL operations (both single get and get_all)
-            fk_validation = True
+            # multiple setting applies to ALL operations (both single get and get_all)
+            return True
         elif validation == 'single' and not get_multiple:
-            # get setting applies only to single get operations
-            fk_validation = True
+            # single setting applies only to single get operations
+            return True
         else:
             # No FK validation
-            fk_validation = False
-
-        unique_validation = Config._config.get('unique_validation', False)
-        return (fk_validation, unique_validation)
-
-    # @staticmethod
-    # def is_get_validation(get_all: bool) -> bool:
-    #     """Check if validation should occur for get operations"""
-    #     if get_all and Config.validation_type() == 'get-all':
-    #         return True
-    #     else:
-    #          return Config.validation_type() in ['get', 'get-all']
-
+            return False

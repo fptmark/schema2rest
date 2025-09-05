@@ -1,43 +1,79 @@
-from typing import Any, Dict, List, Optional, Type, TypeVar, cast, Tuple
-import logging
-from pydantic import BaseModel
+"""
+Database factory for the new refactored architecture.
+Creates and manages database instances with clean manager separation.
+"""
 
-from .base import DatabaseInterface, T
-from .elasticsearch import ElasticsearchDatabase
+import logging
+from typing import Optional, Dict, Any, List, Tuple
+
+from .base import DatabaseInterface
 from .mongodb import MongoDatabase
+from .elasticsearch import ElasticsearchDatabase
 from ..errors import DatabaseError
-from ..notification import notify_warning, notify_error, notify_database_error, NotificationType
+
 
 class DatabaseFactory:
     """
-    Factory class for creating and managing database instances.
+    Factory for creating and managing database instances.
     
-    Supports runtime selection of database backends and maintains
-    a singleton instance for the application.
+    Usage:
+        # Initialize
+        db = await DatabaseFactory.initialize("mongodb", connection_str, db_name)
+        
+        # Use managers
+        users = await db.documents.get_all("user", page=1, pageSize=10)
+        user = await db.documents.get("123", "user")
+        await db.documents.create("user", user_data)
+        
+        # Admin operations
+        await db.entities.create("user", [["email"], ["username"]])
+        await db.indexes.create("user", ["email"], unique=True)
     """
     
     _instance: Optional[DatabaseInterface] = None
     _db_type: Optional[str] = None
 
     @classmethod
-    async def initialize(cls, db_type: str, connection_str: str, database_name: str) -> DatabaseInterface:
-        db: DatabaseInterface
-        """Initialize database connection."""
+    async def initialize(
+        cls, 
+        db_type: str, 
+        connection_str: str, 
+        database_name: str, 
+        case_sensitive_sorting: bool = False
+    ) -> DatabaseInterface:
+        """
+        Initialize database connection with new architecture.
+        
+        Args:
+            db_type: Database type ("mongodb" or "elasticsearch")
+            connection_str: Database connection string
+            database_name: Database name
+            case_sensitive_sorting: Whether to use case-sensitive sorting
+            
+        Returns:
+            DatabaseInterface instance with composed managers
+        """
         if cls._instance is not None:
             logging.info("DatabaseFactory: Already initialized")
             return cls._instance
             
         try:
+            # Create database instance
+            db: DatabaseInterface
             if db_type.lower() == "mongodb":
-                db = MongoDatabase()
+                db = MongoDatabase(case_sensitive_sorting=case_sensitive_sorting)
             elif db_type.lower() == "elasticsearch":
-                db = ElasticsearchDatabase()
+                db = ElasticsearchDatabase(case_sensitive_sorting=case_sensitive_sorting) 
             else:
                 raise ValueError(f"Unsupported database type: {db_type}")
                 
-            await db.init(connection_str, database_name)
+            # Initialize connection
+            await db.core.init(connection_str, database_name)
+            
             cls._instance = db
             cls._db_type = db_type
+            
+            logging.info(f"DatabaseFactory: Initialized {db_type} database")
             return db
             
         except Exception as e:
@@ -51,7 +87,7 @@ class DatabaseFactory:
 
     @classmethod
     def get_instance(cls) -> DatabaseInterface:
-        """Get the database instance."""
+        """Get the current database instance"""
         if cls._instance is None:
             raise RuntimeError("Database not initialized. Call initialize() first.")
         return cls._instance
@@ -59,11 +95,11 @@ class DatabaseFactory:
     @classmethod
     def set_instance(cls, instance: DatabaseInterface, db_type: str) -> None:
         """
-        Set the current database instance.
+        Set the current database instance (mainly for testing).
         
         Args:
             instance: Database instance to set
-            db_type: Type of database for logging/debugging
+            db_type: Database type for logging
         """
         cls._instance = instance
         cls._db_type = db_type
@@ -71,99 +107,86 @@ class DatabaseFactory:
 
     @classmethod
     def get_db_type(cls) -> Optional[str]:
-        """
-        Get the currently configured database type.
-        
-        Returns:
-            Database type string or None if not set
-        """
+        """Get the currently configured database type"""
         return cls._db_type
 
     @classmethod
     async def close(cls) -> None:
-        """Close the database connection."""
+        """Close the database connection and clean up"""
         if cls._instance is not None:
-            await cls._instance.close()
+            await cls._instance.core.close()
             cls._instance = None
             cls._db_type = None
             logging.info("Database instance closed and cleaned up")
 
     @classmethod
     def is_initialized(cls) -> bool:
-        """
-        Check if a database instance has been initialized.
-        
-        Returns:
-            True if database is initialized, False otherwise
-        """
+        """Check if a database instance has been initialized"""
         return cls._instance is not None
 
-    # Convenience methods that delegate to the current instance
-    # These maintain backward compatibility with the old Database class API
-    
-
-
-    @classmethod
-    async def get_all(cls, collection: str, unique_constraints: Optional[List[List[str]]] = None) -> Tuple[List[Dict[str, Any]], List[str], int]:
-        """Get all documents from a collection with count"""
-        data, warnings, total_count = await cls.get_instance().get_all(collection, unique_constraints)
-        
-        # Convert database warnings to appropriate notifications
-        for warning in warnings:
-            cls._notify_database_message(warning, collection, "get_all")
-            
-        return data, warnings, total_count
-
-    @classmethod
-    async def get_list(cls, collection: str, unique_constraints: Optional[List[List[str]]] = None, list_params=None, entity_metadata: Optional[Dict[str, Any]] = None) -> Tuple[List[Dict[str, Any]], List[str], int]:
-        """Get paginated/filtered list of documents from a collection with count"""
-        # Default to safe pagination if no params provided
-        if list_params is None:
-            from app.models.list_params import ListParams
-            list_params = ListParams(page=1, page_size=100)
-            
-        data, warnings, total_count = await cls.get_instance().get_list(collection, unique_constraints, list_params, entity_metadata)
-        
-        # Convert database warnings to appropriate notifications
-        for warning in warnings:
-            cls._notify_database_message(warning, collection, "get_list")
-            
-        return data, warnings, total_count
-
-    @classmethod
-    async def get_by_id(cls, collection: str, doc_id: str, unique_constraints: Optional[List[List[str]]] = None) -> Tuple[Dict[str, Any], List[str]]:
-        """Get document by ID"""
-        data, warnings = await cls.get_instance().get_by_id(collection, doc_id, unique_constraints)
-        
-        # Convert database warnings to appropriate notifications
-        for warning in warnings:
-            cls._notify_database_message(warning, collection, "get_by_id")
-            
-        return data, warnings
-
-    @classmethod
-    async def save_document(cls, collection: str, data: Dict[str, Any], unique_constraints: Optional[List[List[str]]] = None) -> Tuple[Dict[str, Any], List[str]]:
-        """Save document to collection"""
-        data_result, warnings = await cls.get_instance().save_document(collection, data, unique_constraints)
-        
-        # Convert database warnings to appropriate notifications
-        for warning in warnings:
-            cls._notify_database_message(warning, collection, "save_document")
-            
-        return data_result, warnings
-
-    @classmethod
-    async def delete_document(cls, collection: str, doc_id: str) -> bool:
-        """Delete document from collection"""
-        return await cls.get_instance().delete_document(collection, doc_id)
     
     @classmethod
-    def _notify_database_message(cls, message: str, collection: str, operation: str) -> None:
-        """Send appropriate notification based on message content"""
-        # Missing unique constraints/indexes are errors, not warnings
-        if ("Missing unique" in message or "run with --initdb" in message or 
-            "doesn't support unique" in message):
-            notify_error(message, NotificationType.DATABASE, entity=collection, operation=operation)
-        else:
-            notify_warning(message, NotificationType.DATABASE, entity=collection, operation=operation)
+    async def get_all(cls, entity_type: str, sort: List[Tuple[str, str]], filter: Optional[Dict[str, Any]], page: int, pageSize: int) -> tuple[List[Dict[str, Any]], int]:
+        
+        db = cls.get_instance()
+        documents, total_count = await db.documents.get_all(
+            entity_type=entity_type,
+            sort=sort,
+            filter=filter,
+            page=page,
+            pageSize=pageSize
+        )
+        
+        return documents, total_count
 
+    @classmethod
+    async def get_by_id(cls, doc_id: str, entity_type: str) -> Tuple[Dict[str, Any], int]:
+        """Get document by ID. Returns (document, count)."""
+        db = cls.get_instance()
+        document, count = await db.documents.get(
+            id=doc_id,
+            entity_type=entity_type
+        )
+        
+        return document, count
+
+    @classmethod
+    async def create(cls, entity_type: str, data: Dict[str, Any], validate: bool = True) -> Tuple[Dict[str, Any], int]:
+        """Create document. Returns (document, count)."""
+        db = cls.get_instance()
+        document, count = await db.documents.create(
+            entity_type=entity_type,
+            data=data,
+            validate=validate
+        )
+        
+        return document, count
+
+    @classmethod
+    async def update(cls, entity_type: str, data: Dict[str, Any], validate: bool = True) -> Tuple[Dict[str, Any], int]:
+        """Update document. Returns (document, count)."""
+        db = cls.get_instance()
+        document, count = await db.documents.update(
+            entity_type=entity_type,
+            data=data,
+            validate=validate
+        )
+        
+        return document, count
+
+    @classmethod
+    async def delete(cls, entity_type: str, doc_id: str) -> Tuple[Dict[str, Any], int]:
+        """Delete document. Returns (deleted_document, count)."""
+        db = cls.get_instance()
+        deleted_document, count = await db.documents.delete(
+            id=doc_id,
+            entity_type=entity_type
+        )
+        
+        return deleted_document, count
+
+    @classmethod
+    async def remove_entity(cls, entity_type: str) -> bool:
+        """Remove entire entity collection/index"""
+        db = cls.get_instance()
+        return await db.entities.delete(entity_type)
