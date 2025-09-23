@@ -12,11 +12,11 @@ import inspect
 from typing import Dict, Any, Type, Optional, Union, Protocol, Callable
 from urllib.parse import unquote
 from functools import wraps
-from fastapi import Request
+from fastapi import Request, HTTPException
 from pydantic import BaseModel
 
 from app.routers.router_factory import EntityModelProtocol
-from app.services.notification import Notification, ErrorType, validation_warning
+from app.services.notify import Notification
 from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
@@ -26,6 +26,10 @@ def parse_request_context(handler: Callable) -> Callable:
     """Decorator to parse RequestContext from request for all handlers."""
     @wraps(handler)
     async def wrapper(*args, **kwargs):
+        # Initialize notifications and reset the request params for each request
+        Notification.start()
+        RequestContext.reset()
+        
         # Find request parameter
         request = None
         for arg in args:
@@ -35,7 +39,13 @@ def parse_request_context(handler: Callable) -> Callable:
         
         # Parse and normalize URL using RequestContext
         if request:
-            RequestContext.parse_request(str(request.url.path), dict(request.query_params))
+            # Convert entire query string to lowercase for case-insensitive handling
+            lowercase_params = {}
+            for key, value in request.query_params.items():
+                lowercase_params[key.lower()] = value.lower()
+            # Convert URL path to lowercase for case-insensitive handling
+            lowercase_path = str(request.url.path).lower()
+            RequestContext.parse_request(lowercase_path, lowercase_params)
         
         return await handler(*args, **kwargs)
     return wrapper
@@ -44,34 +54,35 @@ def parse_request_context(handler: Callable) -> Callable:
 @parse_request_context
 async def get_all_handler(entity_cls: Type[EntityModelProtocol], request: Request) -> Dict[str, Any]:
     """Reusable handler for GET ALL endpoint (paginated version)."""
-    Notification.start(entity=entity_cls.__name__, operation="get_all")
+    # Notification.start(entity=entity_cls.__name__, operation="get_all")
     
     # Model handles notifications internally, just call and return
-    data, records = await entity_cls.get_all(
+    data, count = await entity_cls.get_all(
         RequestContext.sort_fields,
         RequestContext.filters,
         RequestContext.page,
         RequestContext.pageSize,
         RequestContext.view_spec
     )
-    return update_response(data, records)
+
+    return update_response(data, count)
 
 
 @parse_request_context
 async def get_entity_handler(entity_cls: Type[EntityModelProtocol], entity_id: str, request: Request) -> Dict[str, Any]:
     """Reusable handler for GET endpoint."""
-    Notification.start(entity=entity_cls.__name__, operation="get")
+    # Notification.set(entity=entity_cls.__name__, operation="get")
     
     # Model handles notifications internally, just call and return
-    response, _ = await entity_cls.get(entity_id, RequestContext.view_spec)
-
+    response, count = await entity_cls.get(entity_id, RequestContext.view_spec)
+    
     return update_response(response)   
 
 
 @parse_request_context
 async def create_entity_handler(entity_cls: Type[EntityModelProtocol], entity_data: BaseModel) -> Dict[str, Any]:
     """Reusable handler for POST endpoint."""
-    Notification.start(entity=entity_cls.__name__, operation="create")
+    # Notification.start(entity=entity_cls.__name__, operation="create")
     
     # Model handles notifications internally, just call and return
     response, _ = await entity_cls.create(entity_data.model_dump())
@@ -80,7 +91,7 @@ async def create_entity_handler(entity_cls: Type[EntityModelProtocol], entity_da
 @parse_request_context
 async def update_entity_handler(entity_cls: Type[EntityModelProtocol], entity_data: BaseModel) -> Dict[str, Any]:
     """Reusable handler for PUT endpoint - True PUT semantics (full replacement)."""
-    Notification.start(entity=entity_cls.__name__, operation="update")
+    # Notification.start(entity=entity_cls.__name__, operation="update")
 
     # id MUST exist in the payload for update - moved to docmgr
     # data = entity_data.model_dump()
@@ -97,7 +108,7 @@ async def update_entity_handler(entity_cls: Type[EntityModelProtocol], entity_da
 @parse_request_context
 async def delete_entity_handler(entity_cls: Type[EntityModelProtocol], entity_id: str) -> Dict[str, Any]:
     """Reusable handler for DELETE endpoint."""
-    Notification.start(entity=entity_cls.__name__, operation="delete")
+    # Notification.start(entity=entity_cls.__name__, operation="delete")
 
     # Model handles notifications internally, just call and return
     response, _ = await entity_cls.delete(entity_id)
@@ -109,7 +120,7 @@ def update_response(data: Any, records: Optional[int] = None) -> Dict[str, Any]:
 
     result['data'] = data
 
-    if records:
+    if records is not None:
         totalPages = (records + RequestContext.pageSize - 1) // RequestContext.pageSize if records > 0 else 0
         result['pagination'] = {
             "page": RequestContext.page,
@@ -122,7 +133,7 @@ def update_response(data: Any, records: Optional[int] = None) -> Dict[str, Any]:
     notifications = notification_response.get("notifications", {})
     result["notifications"] = notifications
 
-    errors = notifications.get('errors', [])
-    warnings = notifications.get('warnings', {})
+    # errors = notifications.get('errors', [])
+    # warnings = notifications.get('warnings', {})
     result["status"] = notification_response.get('status', "missing")
     return result
