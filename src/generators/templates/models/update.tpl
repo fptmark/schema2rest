@@ -1,4 +1,5 @@
 class {{Entity}}Update(BaseModel):
+    id: str | None = Field(default=None)
     {{BaseFields}}
 
     model_config = ConfigDict(
