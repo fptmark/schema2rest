@@ -6,10 +6,11 @@ Creates and manages database instances with clean manager separation.
 import logging
 from typing import Optional, Dict, Any, List, Tuple
 
+from app.services.notify import Notification, Error
+
 from .base import DatabaseInterface
 from .mongodb import MongoDatabase
 from .elasticsearch import ElasticsearchDatabase
-from ..errors import DatabaseError
 
 
 class DatabaseFactory:
@@ -74,16 +75,12 @@ class DatabaseFactory:
             cls._db_type = db_type
             
             logging.info(f"DatabaseFactory: Initialized {db_type} database")
-            return db
             
         except Exception as e:
-            if isinstance(e, DatabaseError):
-                raise
-            raise DatabaseError(
-                message=f"Failed to initialize database: {str(e)}",
-                entity="connection",
-                operation="initialize"
-            )
+            from app.services.notify import Notification, Error
+            Notification.error(Error.DATABASE, f"Failed to initialize database: {str(e)}")
+
+        return db
 
     @classmethod
     def get_instance(cls) -> DatabaseInterface:
@@ -126,7 +123,7 @@ class DatabaseFactory:
 
     
     @classmethod
-    async def get_all(cls, entity_type: str, sort: List[Tuple[str, str]], filter: Optional[Dict[str, Any]], page: int, pageSize: int) -> tuple[List[Dict[str, Any]], int]:
+    async def get_all(cls, entity_type: str, sort: Optional[List[Tuple[str, str]]] = None, filter: Optional[Dict[str, Any]] = None, page: int=1, pageSize: int=25) -> tuple[List[Dict[str, Any]], int]:
         
         db = cls.get_instance()
         documents, total_count = await db.documents.get_all(
@@ -140,12 +137,12 @@ class DatabaseFactory:
         return documents, total_count
 
     @classmethod
-    async def get_by_id(cls, doc_id: str, entity_type: str) -> Tuple[Dict[str, Any], int]:
+    async def get(cls, entity_type: str, doc_id: str) -> Tuple[Dict[str, Any], int]:
         """Get document by ID. Returns (document, count)."""
         db = cls.get_instance()
         document, count = await db.documents.get(
-            id=doc_id,
-            entity_type=entity_type
+            entity_type=entity_type,
+            id=doc_id
         )
         
         return document, count
@@ -153,6 +150,12 @@ class DatabaseFactory:
     @classmethod
     async def create(cls, entity_type: str, data: Dict[str, Any], validate: bool = True) -> Tuple[Dict[str, Any], int]:
         """Create document. Returns (document, count)."""
+        # clean the input  -insure a valid id is passed and it is a string
+        if 'id' in data:
+            id = data.get('id', '').strip()
+            if not id:
+                data.pop('id')  # Remove empty id to allow auto-generation
+
         db = cls.get_instance()
         document, count = await db.documents.create(
             entity_type=entity_type,
@@ -165,6 +168,11 @@ class DatabaseFactory:
     @classmethod
     async def update(cls, entity_type: str, data: Dict[str, Any], validate: bool = True) -> Tuple[Dict[str, Any], int]:
         """Update document. Returns (document, count)."""
+        id = data.get('id', '').strip()
+        if not id:
+            Notification.error(stop_type=Error.REQUEST, message=f"Missing or empty 'id' field = ({id}) for update operation", entity_type=entity_type, field="id")
+            return {}, 0
+
         db = cls.get_instance()
         document, count = await db.documents.update(
             entity_type=entity_type,
