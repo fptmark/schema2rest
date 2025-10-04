@@ -4,10 +4,13 @@ Contains the ElasticsearchDocuments class with CRUD operations.
 """
 
 import logging
+import uuid
 from typing import Any, Dict, List, Optional, Tuple
+from elasticsearch.exceptions import NotFoundError
 
 from ..document_manager import DocumentManager
 from ..core_manager import CoreManager
+from ..exceptions import DocumentNotFound, DatabaseError
 from app.services.notify import Notification, Warning, Error, DuplicateConstraintError
 from app.services.metadata import MetadataService
 
@@ -15,12 +18,51 @@ from app.services.metadata import MetadataService
 class ElasticsearchDocuments(DocumentManager):
     """Elasticsearch implementation of document operations"""
     
-    def __init__(self, parent):
-        self.parent = parent
+    def __init__(self, database):
+        super().__init__(database)
 
-    def isInternallyCaseSensitive(self) -> bool:
-        """Elasticsearch is case-insensitive for field names"""
-        return False
+    def _get_proper_sort_fields(self, sort_fields: Optional[List[Tuple[str, str]]], entity_type: str) -> Optional[List[Tuple[str, str]]]:
+        """Get sort fields with proper case names"""
+        if not sort_fields:
+            return sort_fields
+
+        proper_sort = []
+        for field_name, direction in sort_fields:
+            proper_field_name = MetadataService.get_proper_name(entity_type, field_name)
+            proper_sort.append((proper_field_name, direction))
+        return proper_sort
+
+    def _get_proper_filter_fields(self, filters: Optional[Dict[str, Any]], entity_type: str) -> Optional[Dict[str, Any]]:
+        """Get filter dict with proper case field names"""
+        if not filters:
+            return filters
+
+        proper_filters = {}
+        for field_name, value in filters.items():
+            proper_field_name = MetadataService.get_proper_name(entity_type, field_name)
+            # Value is preserved as-is (operators like $gte, $lt, etc. are MongoDB-specific, not field names)
+            proper_filters[proper_field_name] = value
+        return proper_filters
+
+    def _get_proper_view_fields(self, view_spec: Dict[str, Any], entity_type: str) -> Dict[str, Any]:
+        """Get view spec with proper case field names"""
+        if not view_spec:
+            return view_spec
+
+        proper_view_spec = {}
+        for fk_entity_name, field_list in view_spec.items():
+            # Convert the foreign entity name to proper case
+            proper_fk_entity_name = MetadataService.get_proper_name(fk_entity_name)
+
+            # Convert each field name in the field list to proper case
+            proper_field_list = []
+            for field_name in field_list:
+                proper_field_name = MetadataService.get_proper_name(fk_entity_name, field_name)
+                proper_field_list.append(proper_field_name)
+
+            proper_view_spec[proper_fk_entity_name] = proper_field_list
+
+        return proper_view_spec
     
     async def _get_all_impl(
         self,
@@ -31,35 +73,42 @@ class ElasticsearchDocuments(DocumentManager):
         pageSize: int = 25
     ) -> Tuple[List[Dict[str, Any]], int]:
         """Get paginated list of documents"""
-        self.parent._ensure_initialized()
-        es = self.parent.core.get_connection()
-        
-        if not await es.indices.exists(index=entity_type):
+        self.database._ensure_initialized()
+        es = self.database.core.get_connection()
+
+        # Convert entity_type to lowercase for ES index names
+        index_name = entity_type.lower()
+
+        if not await es.indices.exists(index=index_name):
             return [], 0
-        
+
+        # Convert field names to proper case using metadata
+        proper_sort = self._get_proper_sort_fields(sort, entity_type)
+        proper_filter = self._get_proper_filter_fields(filter, entity_type)
+
         # Build query
         query_body = {
             "from": (page - 1) * pageSize,
             "size": pageSize,
-            "query": self._build_query_filter(filter, entity_type)
+            "query": self._build_query_filter(proper_filter, entity_type)
         }
-        
-        # Add sorting
-        sort_spec = self._build_sort_spec(sort, entity_type)
+
+        # Add sorting (only if sort spec is not empty)
+        sort_spec = self._build_sort_spec(proper_sort, entity_type)
         if sort_spec:
             query_body["sort"] = sort_spec
-        
+
         # Execute query
-        response = await es.search(index=entity_type, body=query_body)
+        response = await es.search(index=index_name, body=query_body)
         hits = response.get("hits", {}).get("hits", [])
-        
+
         documents = []
         for hit in hits:
-            doc = self._normalize_document(hit["_source"])
-            documents.append(doc)
-        
+            # doc = self._normalize_document(hit["_source"])
+            documents.append(hit["_source"])
+
         total_count = response.get("hits", {}).get("total", {}).get("value", 0)
-        
+
         return documents, total_count
     
     async def _get_impl(
@@ -68,28 +117,25 @@ class ElasticsearchDocuments(DocumentManager):
         entity_type: str,
     ) -> Tuple[Dict[str, Any], int]:
         """Get single document by ID"""
-        self.parent._ensure_initialized()
-        es = self.parent.core.get_connection()
+        self.database._ensure_initialized()
+        es = self.database.core.get_connection()
 
         index = entity_type.lower()
 
         if not await es.indices.exists(index=index):
-            Notification.warning(Warning.NOT_FOUND, "Index does not exist", entity_type=entity_type, entity_id=id)
-            return {}, 0
+            raise DocumentNotFound(None, f"Index {index} does not exist")
 
         try:
             response = await es.get(index=index, id=id)
-            doc = self._normalize_document(response["_source"])
-            return doc, 1
-        except Exception as e:
-            if "not found" not in str(e).lower():
-                Notification.error(Error.DATABASE, f"Elasticsearch get error: {str(e)}")
-            return {}, 0
+            # doc = self._normalize_document(response["_source"])
+            return response["_source"], 1
+        except NotFoundError as e:
+            raise DocumentNotFound(e)
     
     async def _delete_impl(self, id: str, entity_type: str) -> Tuple[Dict[str, Any], int]:
         """Delete document by ID"""
-        self.parent._ensure_initialized()
-        es = self.parent.core.get_connection()
+        self.database._ensure_initialized()
+        es = self.database.core.get_connection()
 
         index = entity_type.lower()
 
@@ -99,8 +145,8 @@ class ElasticsearchDocuments(DocumentManager):
         # Elasticsearch doesn't return deleted doc automatically, so fetch it first
         try:
             # Get document before deleting
-            get_response = await es.get(index=index, id=id)
-            doc = self._normalize_document(get_response["_source"])
+            doc = await es.get(index=index, id=id)
+            # doc = self._normalize_document(get_response["_source"])
 
             # Now delete it
             delete_response = await es.delete(index=index, id=id)
@@ -113,65 +159,31 @@ class ElasticsearchDocuments(DocumentManager):
                 Notification.error(Error.DATABASE, f"Elasticsearch delete error: {str(e)}")
             return {}, 0
     
-    async def _validate_document_exists_for_update(self, entity_type: str, id: str) -> bool:
-        """Validate that document exists for update operations"""
-        self.parent._ensure_initialized()
-        es = self.parent.core.get_connection()
-        
-        index = entity_type.lower()
-        
-        if not await es.indices.exists(index=index):
-            Notification.warning(Warning.NOT_FOUND, "Index does not exist", entity_type=entity_type, entity_id=id)
-            return False
-        
-        try:
-            await es.get(index=index, id=id)
-            return True
-        except Exception:
-            Notification.warning(Warning.NOT_FOUND, "Document not found for update", entity_type=entity_type, entity_id=id)
-            return False
-    
-    async def _create_impl(self, entity_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    async def _create_impl(self, entity_type: str, id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Create document in Elasticsearch. If data contains 'id', use it as _id, otherwise auto-generate."""
-        es = self.parent.core.get_connection()
-        
+        es = self.database.core.get_connection()
+
         index = entity_type.lower()
         create_data = data.copy()
-        
-        # If data contains 'id', use it as Elasticsearch _id
-        if 'id' in create_data:
-            doc_id = create_data.pop('id')
-            response = await es.index(index=index, id=doc_id, body=create_data)
-            saved_doc = create_data.copy()
-            saved_doc["_id"] = doc_id
-        else:
-            # Auto-generate ID
-            response = await es.index(index=index, body=create_data)
-            saved_doc = create_data.copy()
-            saved_doc["_id"] = response["_id"]
-        
-        return saved_doc
 
-    async def _update_impl(self, entity_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Update existing document in Elasticsearch. Extracts id from data['id']."""
-        es = self.parent.core.get_connection()
-        
-        index = entity_type.lower()
-        id = data['id']  # Extract id from data
-        
-        # Create update data without 'id' field
-        update_data = data.copy()
-        del update_data['id']
-        
-        await es.index(index=index, id=id, body=update_data)
-        saved_doc = update_data.copy()
-        saved_doc["_id"] = id
-        
-        return saved_doc
+        # If an 'id' was specified, use it as Elasticsearch _id
+        if not id:
+            id = str(uuid.uuid4())
+
+        # Store shadow id field for sorting (not _id - that's metadata)
+        create_data['id'] = id
+
+        await es.index(index=index, id=id, body=create_data)
+
+        return create_data
+
+    async def _update_impl(self, entity_type: str, id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        # update is the same as create in ES - it will upsert
+        return await self._create_impl(entity_type, id, data)
     
     def _get_core_manager(self) -> CoreManager:
         """Get the core manager instance"""
-        return self.parent.core
+        return self.database.core
     
     def _build_query_filter(self, filters: Optional[Dict[str, Any]], entity_type: str) -> Dict[str, Any]:
         """Build Elasticsearch query from filter conditions"""
@@ -196,8 +208,8 @@ class ElasticsearchDocuments(DocumentManager):
     def _build_sort_spec(self, sort_fields: Optional[List[Tuple[str, str]]], entity_type: str) -> List[Dict[str, Any]]:
         """Build Elasticsearch sort specification"""
         if not sort_fields:
-            default_sort_field = self.parent.core._get_default_sort_field(entity_type)
-            return [{default_sort_field: {"order": "asc"}}]  
+            # No default sort - let Elasticsearch handle natural ordering
+            return []  
         
         sort_spec = []
         for field, direction in sort_fields:
@@ -288,7 +300,7 @@ class ElasticsearchDocuments(DocumentManager):
         if not unique_constraints:
             return True
             
-        es = self.parent.core.get_connection()
+        es = self.database.core.get_connection()
         index = entity_type.lower()
         
         if not await es.indices.exists(index=index):

@@ -5,3 +5,4 @@ __pycache__/
 .DS_Store
 schema.*
 obsolete/
+src/server_generic_files.bak/

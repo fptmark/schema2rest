@@ -123,44 +123,41 @@ class DatabaseFactory:
 
     
     @classmethod
-    async def get_all(cls, entity_type: str, sort: Optional[List[Tuple[str, str]]] = None, filter: Optional[Dict[str, Any]] = None, page: int=1, pageSize: int=25) -> tuple[List[Dict[str, Any]], int]:
-        
+    async def get_all(cls, entity_type: str, 
+                      sort: Optional[List[Tuple[str, str]]] = None, filter: Optional[Dict[str, Any]] = None, 
+                      page: int=1, pageSize: int=25, view_spec: Dict[str, Any] = {}) -> tuple[List[Dict[str, Any]], int]:
+
         db = cls.get_instance()
         documents, total_count = await db.documents.get_all(
             entity_type=entity_type,
             sort=sort,
             filter=filter,
             page=page,
-            pageSize=pageSize
+            pageSize=pageSize,
+            view_spec=view_spec
         )
-        
+
         return documents, total_count
 
     @classmethod
-    async def get(cls, entity_type: str, doc_id: str) -> Tuple[Dict[str, Any], int]:
+    async def get(cls, entity_type: str, doc_id: str, view_spec: Dict[str, Any] = {}) -> Tuple[Dict[str, Any], int]:
         """Get document by ID. Returns (document, count)."""
         db = cls.get_instance()
         document, count = await db.documents.get(
             entity_type=entity_type,
-            id=doc_id
+            id=doc_id,
+            view_spec=view_spec
         )
-        
+
         return document, count
 
     @classmethod
-    async def create(cls, entity_type: str, data: Dict[str, Any], validate: bool = True) -> Tuple[Dict[str, Any], int]:
+    async def create(cls, entity_type: str, data: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
         """Create document. Returns (document, count)."""
-        # clean the input  -insure a valid id is passed and it is a string
-        if 'id' in data:
-            id = data.get('id', '').strip()
-            if not id:
-                data.pop('id')  # Remove empty id to allow auto-generation
-
         db = cls.get_instance()
         document, count = await db.documents.create(
             entity_type=entity_type,
             data=data,
-            validate=validate
         )
         
         return document, count
@@ -168,8 +165,10 @@ class DatabaseFactory:
     @classmethod
     async def update(cls, entity_type: str, data: Dict[str, Any], validate: bool = True) -> Tuple[Dict[str, Any], int]:
         """Update document. Returns (document, count)."""
-        id = data.get('id', '').strip()
-        if not id:
+        id = (data.pop('id', '') or '').strip()
+        if id:
+            data['id'] = id
+        else:
             Notification.error(stop_type=Error.REQUEST, message=f"Missing or empty 'id' field = ({id}) for update operation", entity_type=entity_type, field="id")
             return {}, 0
 
