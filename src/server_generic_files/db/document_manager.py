@@ -117,33 +117,33 @@ class DocumentManager(ABC):
                                   unique_constraints : List[Any], validate: bool) -> Dict[str, Any]:
         """Normalize document by extracting internal id field and renaming to 'id'"""
         try:
-            doc = self._remove_sub_objects(entity_type, doc)    # should not be there anyway
+            # make sure the id is in the right plae
+            core = self._get_core_manager()
+            id = doc.pop(core.id_field, None)
+            the_doc: Dict[str, Any] = {'id': id, **doc} # ensure id is first field
+
+            the_doc = self._remove_sub_objects(entity_type, the_doc)    # should not be there anyway
 
             # Always run Pydantic validation (required fields, types, ranges)
-            validate_model(model_class, doc, entity_type)
+            validate_model(model_class, the_doc, entity_type)
 
             if validate:
-                await validate_uniques(entity_type, doc, unique_constraints, None)
+                await validate_uniques(entity_type, the_doc, unique_constraints, None)
 
             # Populate view data if requested and validate fks
             if view_spec is None:
                 view_spec = {}
-            await process_fks(entity_type, doc, validate, view_spec)
+            await process_fks(entity_type, the_doc, validate, view_spec)
 
         except DocumentNotFound as e:
             msg = str(e.message) if e.message else str(e.error)
-            Notification.warning(Warning.NOT_FOUND, message=msg, entity_type=entity_type, entity_id=doc.get('id', ''))
+            Notification.warning(Warning.NOT_FOUND, message=msg, entity_type=entity_type, entity_id=id)
             return {}
         except Exception as e:
-                Notification.error(Error.DATABASE, f"Database get error: {str(e)}")
+                Notification.error(Error.DATABASE, f"Database retrieve error: {str(e)}")
                 return {}
         
-        # move internal id to 'id' field
-        core = self._get_core_manager()
-        id = doc.pop(core.id_field, None)
-        out_doc: Dict[str, Any] = {'id': id, **doc}
-
-        return out_doc or {}
+        return the_doc or {}
 
                                     
     @abstractmethod
@@ -268,17 +268,6 @@ class DocumentManager(ABC):
         """Database-specific implementation of delete"""
         pass
     
-    # @abstractmethod
-    # async def _validate_document_exists_for_update(self, entity_type: str, id: str) -> bool:
-    #     """
-    #     Validate that document exists for update operations (database-specific).
-    #     Should add not_found_warning and return False if document doesn't exist.
-        
-    #     Returns:
-    #         True if document exists, False if not found (with warning added)
-    #     """
-    #     pass
-    
     @abstractmethod
     def _get_core_manager(self) -> CoreManager:
         """Get the core manager instance from the concrete implementation"""
@@ -325,66 +314,6 @@ class DocumentManager(ABC):
                 cleaned_data.pop(field)
 
         return cleaned_data
-
-
-
-def process_raw_results(cls, entity_type: str, raw_docs: List[Dict[str, Any]], warnings: List[str]) -> List[Dict[str, Any]]:
-    """Common processing for raw database results."""
-    validations = Config.validation(True)
-    entities = []
-
-    # ALWAYS validate model data against Pydantic schema (enum, range, string validation, etc.)
-    # This is independent of GV settings which only control FK validation
-    for doc in raw_docs:
-        entities.append(validate_model(cls, doc, entity_type))  
-
-    # Database warnings are already processed by DatabaseFactory - don't duplicate
-
-    # Convert models to dictionaries for FastAPI response validation
-    entity_data = []
-    for entity in entities:
-        with python_warnings.catch_warnings(record=True) as caught_warnings:
-            python_warnings.simplefilter("always")
-            data_dict = entity.model_dump(mode='python')
-            entity_data.append(data_dict)
-            
-            # Add any serialization warnings as notifications
-            if caught_warnings:
-                entity_id = data_dict.get('id')
-                if not entity_id:
-                    Notification.error(Error.SYSTEM, "Document missing ID field")
-                    entity_id = "missing"
-
-                # Extract field names from warning messages  
-                warning_field_names = set()
-                for warning in caught_warnings:
-                    warning_msg = str(warning.message)
-                    
-                    # Look for various Pydantic warning patterns
-                    # Pattern 1: "Field 'fieldname' has invalid value" 
-                    if "field" in warning_msg.lower() and "'" in warning_msg:
-                        parts = warning_msg.split("'")
-                        if len(parts) >= 2:
-                            potential_field = parts[1]
-                            if cls._metadata and potential_field in cls._metadata.get('fields', {}):
-                                warning_field_names.add(potential_field)
-                    
-                    # Pattern 2: Check if warning is related to datetime fields based on message content
-                    elif any(keyword in warning_msg.lower() for keyword in ['datetime', 'date', 'time', 'iso']):
-                        # For datetime-related warnings, check all datetime fields in the data
-                        for field_name, field_meta in cls._metadata.get('fields', {}).items():
-                            if field_meta.get('type') in ['Date', 'Datetime', 'ISODate'] and field_name in data_dict:
-                                warning_field_names.add(field_name)
-                
-                if warning_field_names:
-                    field_list = ', '.join(sorted(warning_field_names))
-                    Notification.warning(Warning.DATA_VALIDATION, "Serialization warnings for fields", entity_type=entity_type, entity_id=entity_id, value=field_list)
-                else:
-                    # Fallback for warnings without extractable field names
-                    warning_count = len(caught_warnings)
-                    Notification.warning(Warning.DATA_VALIDATION, "Serialization warnings", entity_type=entity_type, entity_id=entity_id, value=str(warning_count))
-
-    return entity_data
 
 
 async def validate_uniques(entity_type: str, data: Dict[str, Any], unique_constraints: List[List[str]], exclude_id: Optional[str] = None) -> None:
@@ -451,6 +380,7 @@ async def process_fks(entity_type: str, data: Dict[str, Any], validate: bool, vi
     """
     
     fk_data = None
+    entity_id = data.get('id', 'new')   # use 'new' if no id on create
     for field_name, field_meta in MetadataService.fields(entity_type).items():
         # process every FK field if validating OR if it's in the view spec
         if field_meta.get('type') == 'ObjectId' and len(field_name) > 2:
@@ -484,22 +414,24 @@ async def process_fks(entity_type: str, data: Dict[str, Any], validate: bool, vi
                                     elif field.lower() in field_map:
                                         actual_field = field_map[field.lower()]
                                         fk_data[actual_field] = related_data[actual_field]
-                                    else: # viewspec field not found in related entity
-                                        Notification.warning(Warning.BAD_NAME, "Field not found in related entity", entity_type=entity_type, entity_id=data['id'], field=field)
+                                    else :
+                                        attrs = MetadataService.get(fk_entity_type, field)
+                                        if 'required' in attrs and attrs['required'].lower() == 'true':
+                                            Notification.warning(Warning.BAD_NAME, "Field not found in related entity", entity_type=entity_type, entity_id=entity_id, field=field)
                                         
                         elif count == 0:
                             # FK record not found - validation warning if validating
-                            Notification.warning(Warning.NOT_FOUND, "Referenced ID does not exist", entity_type=entity_type, entity_id=data['id'], field=field_name, value=fk_field_id)
+                            Notification.warning(Warning.NOT_FOUND, "Referenced ID does not exist", entity_type=entity_type, entity_id=entity_id, field=field_name, value=fk_field_id)
                         else:
                             # Multiple records - data integrity issue
-                            Notification.warning(Warning.DATA_VALIDATION, "Multiple FK records found. Data integrity issue?", entity_type=entity_type, entity_id=data['id'], field=field_name, value=fk_field_id)
+                            Notification.warning(Warning.DATA_VALIDATION, "Multiple FK records found. Data integrity issue?", entity_type=entity_type, entity_id=entity_id, field=field_name, value=fk_field_id)
                             
                     else:
-                        Notification.warning(Warning.NOT_FOUND, "FK entity does not exist", entity_type=entity_type, entity_id=data['id'], field=field_name, value=fk_entity_type)
+                        Notification.warning(Warning.NOT_FOUND, "FK entity does not exist", entity_type=entity_type, entity_id=entity_id, field=field_name, value=fk_entity_type)
                 else:
                     # Invalid entity class or missing ID - validation warning if validating and required or entity in view spec
                     if (validate and field_meta.get('required', False)) or fk_name.lower() in view_spec.keys():
-                        Notification.warning(Warning.MISSING, "Missing fk ID", entity_type=entity_type, entity_id=data['id'], field=field_name)
+                        Notification.warning(Warning.MISSING, "Missing fk ID", entity_type=entity_type, entity_id=entity_id, field=field_name)
                 
                 # Set FK field data (inside the loop for each FK)
                 data[fk_name] = fk_data  
