@@ -37,6 +37,7 @@ help:
 	@echo "  services    - Generate service routes"
 	@echo "  spec        - Generate OpenAPI specification"
 	@echo "  code        - Generate all code (main, models, services, spec)"
+	@echo "  validator   - Generate test validation tool"
 	@echo ""
 	@echo "Convenience targets:"
 	@echo "  all         - Generate schema and all code"
@@ -124,6 +125,9 @@ code:	schema.yaml
 	$(MAKE) models
 	$(MAKE) services
 	$(MAKE) spec
+
+validator: test/validate-src
+	(cd test/validate-src && go build -o ../validate cmd/validate/main.go)
 
 # Convenience targets
 all: schema code 
