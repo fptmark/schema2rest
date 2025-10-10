@@ -7,10 +7,16 @@ from app.services.metadata import MetadataService
 
 {{EnumClasses}}
 
+{{CreateClass}}
+
+{{UpdateClass}}
+
+
 class {{Entity}}(BaseModel):
     id: str | None = Field(default=None)
     {{BaseFields}}
-    {{AutoFields}}
+    {{AutoGenerateFields}}
+    {{AutoUpdateFields}}
 
     model_config = ConfigDict()
 
@@ -38,17 +44,15 @@ class {{Entity}}(BaseModel):
         
     @classmethod
     async def get(cls, id: str, view_spec: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
-        return await DatabaseFactory.get("{{Entity}}", id)
+        return await DatabaseFactory.get("{{Entity}}", id, view_spec)
 
     @classmethod
-    async def create(cls, data: Dict[str, Any], validate: bool = True) -> Tuple[Dict[str, Any], int]:
-        {{AutoUpdateLines}}
-        return await DatabaseFactory.create("{{Entity}}", data)
+    async def create(cls, data: {{Entity}}Create, validate: bool = True) -> Tuple[Dict[str, Any], int]:
+        return await DatabaseFactory.create("{{Entity}}", data.model_dump())
 
     @classmethod
-    async def update(cls, data: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
-        {{AutoUpdateLines}}
-        return await DatabaseFactory.update("{{Entity}}", data)
+    async def update(cls, data: {{Entity}}Update) -> Tuple[Dict[str, Any], int]:
+        return await DatabaseFactory.update("{{Entity}}", data.model_dump())
 
     @classmethod
     async def delete(cls, id: str) -> Tuple[Dict[str, Any], int]:

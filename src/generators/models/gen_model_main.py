@@ -40,7 +40,7 @@ def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates
 
     # Build the Fields declarations, save function and validators
     base_field_lines = []   # declarations for fields that are not autoGenerate or autoUpdate
-    auto_field_lines = []   # declarations for fields that are autoGenerate or autoUpdate
+    auto_generate_lines: List[str] = []   # declarations for fields that are autoGenerate
     auto_update_lines: List[str] = []         # save function which is for autoUpdate fields
     enum_lines = []
     # validator_lines: List[str] = []    # validators for fields that are not autoGenerate or autoUpdate
@@ -69,10 +69,13 @@ def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates
             # if field_name != "id":
             line = f"{field_name}: {base} = {init}"
             if info.get("autoGenerate", False):
-                auto_field_lines.append(line)
+                auto_generate_lines.append(line)
+                # if "date" in info.get("type", "").lower():
+                #     auto_generate_lines.append(f"data['{field_name}'] = datetime.now(timezone.utc)")
             elif info.get("autoUpdate", False):   # autoupdate needs to be in save()
-                auto_field_lines.append(line)
-                auto_update_lines.append(f"data['{field_name}'] = datetime.now(timezone.utc)")
+                auto_update_lines.append(line)
+                # if "date" in info.get("type", "").lower():
+                #     auto_update_lines.append(f"data['{field_name}'] = datetime.now(timezone.utc)")
             else:
                 # Filter out autoGenerate and autoUpdate fields for CREATE/UPDATE operations
                 if operation == Operation.GET or not auto_field:
@@ -80,13 +83,14 @@ def build_vars(entity: str, e_def: Dict[str, Any], templates: template.Templates
                     # validator_lines = validator_lines + build_validator(field_name, info, schema)
 
     vars = {
-        "Entity":           entity,
-        "EntityLower":      entity.lower(),
-        "Metadata":         pprint.pformat(metadata, indent=4, sort_dicts=False),
-        "BaseFields":       base_field_lines, 
-        "AutoFields":       auto_field_lines, 
-        "UniqueList":       json.dumps(e_def.get("unique", [])),
-        "EnumClasses":      '\n'.join(enum_lines)
+        "Entity":               entity,
+        "EntityLower":          entity.lower(),
+        "Metadata":             pprint.pformat(metadata, indent=4, sort_dicts=False),
+        "BaseFields":           base_field_lines, 
+        "AutoGenerateFields":   auto_generate_lines, 
+        "AutoUpdateFields":     auto_update_lines, 
+        "UniqueList":           json.dumps(e_def.get("unique", [])),
+        "EnumClasses":          '\n'.join(enum_lines)
         # "MappingsDict":     pprint.pformat(get_elastic_search_mapping(entity, fields, schema), indent=4),
     }
 
@@ -125,18 +129,17 @@ def generate_models(schema_file: str, path_root: str):
         if defs.get("abstract", False):
             continue
 
+        create_vars = build_vars(entity, defs, templates, schema, Operation.POST)
+        create_class: List[str] =  templates.render("create", create_vars)
+
+        update_vars = build_vars(entity, defs, templates, schema, Operation.PUT)
+        update_class =  templates.render("update", update_vars)
+
         vars = build_vars(entity, defs, templates, schema, Operation.GET)
+        vars["CreateClass"] = create_class
+        vars["UpdateClass"] = update_class
         out: List[str] =  templates.render("base", vars)
         out.append("")
-
-        vars = build_vars(entity, defs, templates, schema, Operation.POST)
-        out1: List[str] =  templates.render("create", vars)
-        out.extend(out1)
-        out.append("")
-
-        vars = build_vars(entity, defs, templates, schema, Operation.PUT)
-        out1 =  templates.render("update", vars)
-        out.extend(out1)
 
         helpers.write(path_root, "models", f"{entity.lower()}_model.py", out)
         # print(f"Generated {entity.lower()}_model.py")

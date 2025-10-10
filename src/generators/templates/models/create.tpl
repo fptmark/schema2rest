@@ -1,6 +1,8 @@
 class {{Entity}}Create(BaseModel):
     id: str | None = Field(default=None)
     {{BaseFields}}
+    {{AutoGenerateFields}}
+    {{AutoUpdateFields}}
 
     model_config = ConfigDict(
         from_attributes=True,

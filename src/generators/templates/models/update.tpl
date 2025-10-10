@@ -1,6 +1,7 @@
 class {{Entity}}Update(BaseModel):
     id: str | None = Field(default=None)
     {{BaseFields}}
+    {{AutoUpdateFields}}
 
     model_config = ConfigDict(
         from_attributes=True,
