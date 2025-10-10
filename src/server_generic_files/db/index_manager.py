@@ -19,7 +19,7 @@ class IndexManager(ABC):
         """compare needed vs existing, delete obsolete, create missing"""
         try:
             for entity in MetadataService.list_entities():
-                needed_uniques = MetadataService.get(entity).get('unique', [])
+                needed_uniques = MetadataService.get(entity).get('uniques', [])
                 existing_indexes = await self.get_all(entity)
                 for existing in existing_indexes:
                     if existing not in needed_uniques:
@@ -54,12 +54,17 @@ class IndexManager(ABC):
     async def get_all(self, entity_type: str) -> List[List[str]]:
         """Get all unique constraint field lists for entity"""
         pass
-    
+
+    @abstractmethod
+    async def get_all_detailed(self, entity_type: str) -> dict:
+        """Get all indexes with full details as dict[index_name, index_info]"""
+        pass
+
     @abstractmethod
     async def create(self, entity_type: str, fields: List[str], unique: bool = True, name: Optional[str] = None) -> None:
         """Create unique index on entity"""
         pass
-    
+
     @abstractmethod
     async def delete(self, entity_type: str, fields: List[str]) -> None:
         """Delete index by field names"""
