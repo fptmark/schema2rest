@@ -40,20 +40,25 @@ class {{Entity}}(BaseModel):
                       view_spec: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int]:
         "Get paginated, sorted, and filtered list of entity." 
         
-        return await DatabaseFactory.get_all("{{Entity}}", sort, filter, page, pageSize, view_spec)
+        db = DatabaseFactory.get_instance()
+        return await db.documents.get_all("{{Entity}}", sort, filter, page, pageSize, view_spec)
         
     @classmethod
-    async def get(cls, id: str, view_spec: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
-        return await DatabaseFactory.get("{{Entity}}", id, view_spec)
+    async def get(cls, id: str, view_spec: Dict[str, Any], top_level: bool = True) -> Tuple[Dict[str, Any], int, Optional[BaseException]]:
+        db = DatabaseFactory.get_instance()
+        return await db.documents.get("{{Entity}}", id, view_spec, top_level)
 
     @classmethod
     async def create(cls, data: {{Entity}}Create, validate: bool = True) -> Tuple[Dict[str, Any], int]:
-        return await DatabaseFactory.create("{{Entity}}", data.model_dump())
+        db = DatabaseFactory.get_instance()
+        return await db.documents.create("{{Entity}}", data.model_dump())
 
     @classmethod
-    async def update(cls, data: {{Entity}}Update) -> Tuple[Dict[str, Any], int]:
-        return await DatabaseFactory.update("{{Entity}}", data.model_dump())
+    async def update(cls, id, data: {{Entity}}Update) -> Tuple[Dict[str, Any], int]:
+        db = DatabaseFactory.get_instance()
+        return await db.documents.update("{{Entity}}", id, data.model_dump())
 
     @classmethod
     async def delete(cls, id: str) -> Tuple[Dict[str, Any], int]:
-        return await DatabaseFactory.delete("{{Entity}}", id)
+        db = DatabaseFactory.get_instance()
+        return await db.documents.delete("{{Entity}}", id)
