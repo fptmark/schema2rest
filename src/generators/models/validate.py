@@ -71,9 +71,10 @@ def type_annotation(info: Dict[str, Any], schema, operation):
     # default/factory
     validators = get_constraint(info, schema) 
     init = ""
-    if auto_field :
-        if base == "datetime":
-            init = "default_factory=lambda: datetime.now(timezone.utc)"
+    if auto_field and base == "datetime":
+        init = "default_factory=lambda: datetime.now(timezone.utc)"
+    elif base == "bool":
+        init = "..., strict=True"
     elif required and not auto_field:
         init = "..., " + ', '.join(validators) if validators else "..."
     else:
