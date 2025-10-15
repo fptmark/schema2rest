@@ -61,7 +61,7 @@ class CleanOpenAPIGenerator:
                 print(f"   ⚠️  Could not import {module_name}: {e}")
                 continue
 
-            entity_meta = model_class.get_metadata()
+            entity_meta = model_class._metadata
             operations = entity_meta.get("operations", "crud")
             print(f"   🔧 {entity_name} operations: {operations}")
             
