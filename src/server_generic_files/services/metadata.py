@@ -1,5 +1,5 @@
 from typing import Dict, List, Any, Optional, Tuple
-from app.services.notify import Notification, Error
+from app.services.notify import Notification, HTTP
 from app.utils import merge_overrides
 
 class MetadataService:
@@ -89,9 +89,9 @@ class MetadataService:
         return ''
 
     @staticmethod
-    def _get_raw_metadata(entity_name: str) -> Optional[Dict[str, Any]]:
+    def _get_raw_metadata(entity: str) -> Optional[Dict[str, Any]]:
         
-        module_path = f"app.models.{entity_name.lower()}_model.{entity_name}"
+        module_path = f"app.models.{entity.lower()}_model.{entity}"
         if not module_path:
             return None
             
@@ -107,5 +107,5 @@ class MetadataService:
     @staticmethod
     def _fail_fast(message: str) -> None:
         """Fail-fast error handling - notify and raise exception."""
-        Notification.error(Error.SYSTEM, message)
+        Notification.error(HTTP.INTERNAL_ERROR, message)
         raise ValueError(message)
