@@ -41,7 +41,7 @@ help:
 	@echo ""
 	@echo "Convenience targets:"
 	@echo "  all         - Generate schema and all code"
-	@echo "  openapi     - Alias for generating OpenAPI spec"
+	@echo "  spec        - Alias for generating OpenAPI spec"
 
 # Setup targets
 install: setup clean rebuild
